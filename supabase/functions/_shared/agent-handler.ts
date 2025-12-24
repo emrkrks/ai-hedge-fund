@@ -74,45 +74,39 @@ export function createAgentHandler(agentKey: string) {
                 analysis_details: formulaAnalysis.analysis_summary,
             });
 
-            // 5. Call ALL 4 LLMs in parallel (like consensus mode but show all results)
+            // 5. Call ALL 4 LLMs SEQUENTIALLY (with rate limiting between each)
+            // Import callMultipleLLMs which handles rate limiting properly
+            const { callMultipleLLMs } = await import("./llm-client.ts");
             const allProviders: LLMProvider[] = ["azure", "gemini", "zai", "groq"];
-            const llmPromises = allProviders.map(async (provider) => {
-                try {
-                    const response = await callLLM({
-                        provider,
-                        systemPrompt,
-                        userPrompt,
-                    });
-                    return {
-                        provider,
+
+            console.log(`[${agentKey}] Starting sequential LLM calls for ${ticker}...`);
+
+            // Use sequential mode to prevent rate limiting issues
+            const llmResponses = await callMultipleLLMs(systemPrompt, userPrompt, allProviders, true);
+
+            // Build LLM results object from responses
+            const llmResultsMap: Record<string, { signal: string; confidence: number; reasoning: string }> = {};
+
+            for (const response of llmResponses) {
+                if (response.provider) {
+                    llmResultsMap[response.provider] = {
                         signal: response.signal,
                         confidence: response.confidence,
                         reasoning: response.reasoning,
-                        error: null,
                     };
-                } catch (error) {
-                    const errorMsg = error instanceof Error ? error.message : String(error);
-                    return {
-                        provider,
-                        signal: "NEUTRAL" as const,
-                        confidence: 0,
-                        reasoning: `Error: ${errorMsg}`,
-                        error: errorMsg,
-                    };
+                    console.log(`[${agentKey}] ${response.provider}: ${response.signal} (${response.confidence}%)`);
                 }
-            });
-
-            const llmResults = await Promise.all(llmPromises);
-
-            // Build LLM results object
-            const llmResultsMap: Record<string, { signal: string; confidence: number; reasoning: string }> = {};
-            for (const result of llmResults) {
-                llmResultsMap[result.provider] = {
-                    signal: result.signal,
-                    confidence: result.confidence,
-                    reasoning: result.reasoning,
-                };
             }
+
+            // Track which providers succeeded/failed
+            const successfulProviders = Object.keys(llmResultsMap);
+            const failedProviders = allProviders.filter(p => !successfulProviders.includes(p));
+
+            if (failedProviders.length > 0) {
+                console.warn(`[${agentKey}] Failed providers: ${failedProviders.join(", ")}`);
+            }
+            console.log(`[${agentKey}] Successful providers: ${successfulProviders.join(", ")}`);
+
 
             // Use formula signal/confidence as primary, with LLM reasoning from preferred provider
             const preferredProvider = llm_provider as LLMProvider;

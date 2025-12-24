@@ -13,13 +13,48 @@ export const ALL_PROVIDERS: LLMProvider[] = ["azure", "gemini", "zai", "groq"];
 // ============================================================================
 // Rate Limiting Configuration for LLM Providers
 // ============================================================================
+
+// Provider-specific rate limit settings (some APIs are stricter than others)
+const PROVIDER_RATE_LIMITS: Record<LLMProvider, {
+    initialCooldownMs: number;
+    maxCooldownMs: number;
+    maxRetries: number;
+    minDelayBetweenRequestsMs: number;
+}> = {
+    azure: {
+        initialCooldownMs: 10000,    // 10s initial cooldown
+        maxCooldownMs: 60000,         // 60s max
+        maxRetries: 5,
+        minDelayBetweenRequestsMs: 2000,
+    },
+    gemini: {
+        initialCooldownMs: 10000,    // 10s initial cooldown
+        maxCooldownMs: 60000,         // 60s max
+        maxRetries: 5,
+        minDelayBetweenRequestsMs: 2000,
+    },
+    zai: {
+        // Z.ai (China) has stricter rate limits
+        initialCooldownMs: 15000,    // 15s initial cooldown (higher)
+        maxCooldownMs: 90000,         // 90s max (higher)
+        maxRetries: 6,                // More retries
+        minDelayBetweenRequestsMs: 3000, // Longer delay between requests
+    },
+    groq: {
+        initialCooldownMs: 12000,    // 12s initial cooldown
+        maxCooldownMs: 60000,         // 60s max
+        maxRetries: 5,
+        minDelayBetweenRequestsMs: 2500,
+    },
+};
+
 const LLM_RATE_LIMIT_CONFIG = {
-    MAX_RETRIES: 5,                  // Maximum retry attempts (increased from 3)
-    INITIAL_COOLDOWN_MS: 10000,      // Initial cooldown: 10 seconds (increased from 5s)
-    MAX_COOLDOWN_MS: 60000,          // Maximum cooldown: 60 seconds
+    MAX_RETRIES: 5,                  // Default max retries
+    INITIAL_COOLDOWN_MS: 10000,      // Default initial cooldown: 10 seconds
+    MAX_COOLDOWN_MS: 60000,          // Default maximum cooldown: 60 seconds
     BACKOFF_MULTIPLIER: 2,           // Exponential backoff multiplier
     JITTER_MAX_MS: 2000,             // Random jitter up to 2 seconds
-    DELAY_BETWEEN_PROVIDERS_MS: 2000, // Delay between sequential provider calls
+    DELAY_BETWEEN_PROVIDERS_MS: 3000, // Delay between sequential provider calls (increased)
 };
 
 // Track last request time per provider to prevent rapid fire
@@ -45,25 +80,34 @@ function addJitter(baseMs: number): number {
 }
 
 /**
- * Calculate exponential backoff delay for retries
+ * Calculate exponential backoff delay for retries (provider-specific)
  */
-function getLLMBackoffDelay(retryCount: number): number {
-    const delay = LLM_RATE_LIMIT_CONFIG.INITIAL_COOLDOWN_MS *
+function getLLMBackoffDelay(provider: LLMProvider, retryCount: number): number {
+    const config = PROVIDER_RATE_LIMITS[provider];
+    const delay = config.initialCooldownMs *
         Math.pow(LLM_RATE_LIMIT_CONFIG.BACKOFF_MULTIPLIER, retryCount);
-    return Math.min(addJitter(delay), LLM_RATE_LIMIT_CONFIG.MAX_COOLDOWN_MS);
+    return Math.min(addJitter(delay), config.maxCooldownMs);
 }
 
 /**
- * Wait before making request to a specific provider
+ * Get max retries for a specific provider
+ */
+function getProviderMaxRetries(provider: LLMProvider): number {
+    return PROVIDER_RATE_LIMITS[provider].maxRetries;
+}
+
+/**
+ * Wait before making request to a specific provider (provider-specific delays)
  */
 async function waitForProvider(provider: LLMProvider): Promise<void> {
     const now = Date.now();
     const lastRequest = lastProviderRequestTime[provider];
-    const minDelay = LLM_RATE_LIMIT_CONFIG.DELAY_BETWEEN_PROVIDERS_MS;
+    const config = PROVIDER_RATE_LIMITS[provider];
+    const minDelay = config.minDelayBetweenRequestsMs;
 
     if (now - lastRequest < minDelay) {
         const waitTime = minDelay - (now - lastRequest);
-        console.log(`[LLM/${provider}] Rate limit wait: ${waitTime}ms`);
+        console.log(`[LLM/${provider}] Provider-specific rate limit wait: ${waitTime}ms`);
         await sleep(waitTime);
     }
 
@@ -164,12 +208,13 @@ async function callAzureOpenAI(
         const errorText = await response.text();
 
         // Retry on rate limit (429) error with exponential backoff
-        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+        const maxRetries = getProviderMaxRetries("azure");
+        if (response.status === 429 && retryCount < maxRetries) {
             const serverWaitTime = parseRetryAfterFromError(errorText);
-            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay("azure", retryCount);
 
             console.warn(
-                `[Azure] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `[Azure] Rate limited (429). Retry ${retryCount + 1}/${maxRetries} ` +
                 `after ${Math.round(cooldownMs / 1000)}s cooldown...`
             );
             await sleep(cooldownMs);
@@ -234,12 +279,13 @@ async function callGemini(
         const errorText = await response.text();
 
         // Retry on rate limit (429) error with exponential backoff
-        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+        const maxRetries = getProviderMaxRetries("gemini");
+        if (response.status === 429 && retryCount < maxRetries) {
             const serverWaitTime = parseRetryAfterFromError(errorText);
-            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay("gemini", retryCount);
 
             console.warn(
-                `[Gemini] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `[Gemini] Rate limited (429). Retry ${retryCount + 1}/${maxRetries} ` +
                 `after ${Math.round(cooldownMs / 1000)}s cooldown...`
             );
             await sleep(cooldownMs);
@@ -298,12 +344,13 @@ async function callZai(
         const errorText = await response.text();
 
         // Retry on rate limit (429) error with exponential backoff
-        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+        const maxRetries = getProviderMaxRetries("zai");
+        if (response.status === 429 && retryCount < maxRetries) {
             const serverWaitTime = parseRetryAfterFromError(errorText);
-            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay("zai", retryCount);
 
             console.warn(
-                `[Z.ai] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `[Z.ai] Rate limited (429). Retry ${retryCount + 1}/${maxRetries} ` +
                 `after ${Math.round(cooldownMs / 1000)}s cooldown...`
             );
             await sleep(cooldownMs);
@@ -363,12 +410,13 @@ async function callGroq(
         const errorText = await response.text();
 
         // Retry on rate limit (429) error with exponential backoff
-        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+        const maxRetries = getProviderMaxRetries("groq");
+        if (response.status === 429 && retryCount < maxRetries) {
             const serverWaitTime = parseRetryAfterFromError(errorText);
-            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay("groq", retryCount);
 
             console.warn(
-                `[Groq] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `[Groq] Rate limited (429). Retry ${retryCount + 1}/${maxRetries} ` +
                 `after ${Math.round(cooldownMs / 1000)}s cooldown...`
             );
             await sleep(cooldownMs);
