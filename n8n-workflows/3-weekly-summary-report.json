@@ -1,0 +1,174 @@
+{
+    "name": "AI Hedge Fund - Weekly Summary (Supabase Edge)",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "0 18 * * 0"
+                        }
+                    ]
+                }
+            },
+            "name": "Cron Trigger (Sunday 18:00)",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1,
+            "position": [
+                -400,
+                200
+            ],
+            "id": "cron-trigger"
+        },
+        {
+            "parameters": {
+                "operation": "getAll",
+                "tableId": "analyses_aggregated",
+                "returnAll": false,
+                "limit": 500,
+                "filterType": "string",
+                "filterString": "created_at=gte.{{ $now.minus(7, 'days').toISO().split('T')[0] }}"
+            },
+            "name": "Get Weekly Analyses",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                -200,
+                200
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "get-analyses"
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================\n// GENERATE WEEKLY SUMMARY\n// ============================================\n\nconst analyses = $input.all().map(item => item.json);\n\nif (analyses.length === 0) {\n  return [{ json: { error: 'No analyses found for this week' } }];\n}\n\n// Group by ticker\nconst tickerMap = {};\nanalyses.forEach(a => {\n  if (!tickerMap[a.ticker]) {\n    tickerMap[a.ticker] = [];\n  }\n  tickerMap[a.ticker].push(a);\n});\n\n// Calculate summary for each ticker\nconst tickerSummaries = Object.entries(tickerMap).map(([ticker, records]) => {\n  const bullishDays = records.filter(r => r.aggregated_signal === 'BULLISH').length;\n  const bearishDays = records.filter(r => r.aggregated_signal === 'BEARISH').length;\n  const avgConfidence = records.reduce((sum, r) => sum + (r.aggregated_confidence || 0), 0) / records.length;\n  \n  let weeklySignal = 'NEUTRAL';\n  if (bullishDays > bearishDays && bullishDays >= records.length / 2) weeklySignal = 'BULLISH';\n  if (bearishDays > bullishDays && bearishDays >= records.length / 2) weeklySignal = 'BEARISH';\n  \n  return {\n    ticker,\n    weekly_signal: weeklySignal,\n    bullish_days: bullishDays,\n    bearish_days: bearishDays,\n    avg_confidence: Math.round(avgConfidence),\n    total_analyses: records.length\n  };\n});\n\n// Sort by confidence\ntickerSummaries.sort((a, b) => b.avg_confidence - a.avg_confidence);\n\n// Top bullish and bearish\nconst topBullish = tickerSummaries.filter(t => t.weekly_signal === 'BULLISH').slice(0, 5);\nconst topBearish = tickerSummaries.filter(t => t.weekly_signal === 'BEARISH').slice(0, 5);\n\n// Generate message\nconst bullishList = topBullish.map(t => `🟢 ${t.ticker}: ${t.bullish_days}/${t.total_analyses} bullish (${t.avg_confidence}%)`).join('\\n') || 'None';\nconst bearishList = topBearish.map(t => `🔴 ${t.ticker}: ${t.bearish_days}/${t.total_analyses} bearish (${t.avg_confidence}%)`).join('\\n') || 'None';\n\nconst message = `\n📊 *AI HEDGE FUND - WEEKLY SUMMARY*\n📅 Week ending ${new Date().toLocaleDateString('tr-TR')}\n\n📈 *TOP BULLISH PICKS:*\n${bullishList}\n\n📉 *TOP BEARISH PICKS:*\n${bearishList}\n\n📊 *Statistics:*\n• Total Tickers Analyzed: ${Object.keys(tickerMap).length}\n• Total Analyses: ${analyses.length}\n• Using 17 AI Investor Agents\n\n_Powered by Supabase Edge Functions_\n`;\n\nreturn [{\n  json: {\n    formatted_message: message,\n    ticker_summaries: tickerSummaries,\n    top_bullish: topBullish,\n    top_bearish: topBearish,\n    total_tickers: Object.keys(tickerMap).length,\n    total_analyses: analyses.length\n  }\n}];"
+            },
+            "name": "Generate Summary",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                0,
+                200
+            ],
+            "id": "generate-summary"
+        },
+        {
+            "parameters": {
+                "chatId": "-4820408060",
+                "text": "={{ $json.formatted_message }}",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "name": "Send to Telegram",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                200,
+                100
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "send-telegram"
+        },
+        {
+            "parameters": {
+                "tableId": "weekly_reports",
+                "fieldsUi": {
+                    "fieldValues": [
+                        {
+                            "fieldId": "report_date",
+                            "fieldValue": "={{ $now.toISO() }}"
+                        },
+                        {
+                            "fieldId": "total_analyses",
+                            "fieldValue": "={{ $json.total_analyses }}"
+                        },
+                        {
+                            "fieldId": "report_html",
+                            "fieldValue": "={{ $json.formatted_message }}"
+                        },
+                        {
+                            "fieldId": "metadata",
+                            "fieldValue": "={{ JSON.stringify({ top_bullish: $json.top_bullish, top_bearish: $json.top_bearish, total_tickers: $json.total_tickers }) }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Save Summary",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                200,
+                300
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "save-summary"
+        }
+    ],
+    "connections": {
+        "Cron Trigger (Sunday 18:00)": {
+            "main": [
+                [
+                    {
+                        "node": "Get Weekly Analyses",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Weekly Analyses": {
+            "main": [
+                [
+                    {
+                        "node": "Generate Summary",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Generate Summary": {
+            "main": [
+                [
+                    {
+                        "node": "Send to Telegram",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Save Summary",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1",
+        "timezone": "Europe/Madrid"
+    },
+    "tags": [
+        "weekly",
+        "summary",
+        "supabase-edge"
+    ]
+}

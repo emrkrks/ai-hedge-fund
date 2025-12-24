@@ -1,0 +1,359 @@
+{
+    "name": "Scuttlebutt Sentiment Analysis (StockTwits)",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "0 8 * * 1-5"
+                        }
+                    ]
+                }
+            },
+            "name": "Cron Trigger (Weekdays 08:00)",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1,
+            "position": [
+                -400,
+                200
+            ],
+            "id": "cron-trigger"
+        },
+        {
+            "parameters": {
+                "operation": "getAll",
+                "tableId": "watchlists",
+                "returnAll": false,
+                "limit": 20,
+                "filterType": "string",
+                "filterString": "alert_enabled=eq.true"
+            },
+            "name": "Get Watchlist",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                -200,
+                200
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "get-watchlist"
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "name": "Loop Over Tickers",
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 1,
+            "position": [
+                0,
+                200
+            ],
+            "id": "loop-tickers"
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "=https://api.stocktwits.com/api/2/streams/symbol/{{ $json.ticker }}.json",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "User-Agent",
+                            "value": "AI-Hedge-Fund/1.0"
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 10000
+                }
+            },
+            "name": "StockTwits - Get Messages",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                200,
+                200
+            ],
+            "id": "stocktwits-fetch"
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================\n// SCUTTLEBUTT SENTIMENT ANALYSIS (StockTwits)\n// Phil Fisher style - what are people saying?\n// ============================================\n\nconst ticker = $node['Loop Over Tickers'].json.ticker;\nconst companyName = $node['Loop Over Tickers'].json.company_name || ticker;\nconst response = $json;\n\n// Parse StockTwits data\nconst messages = response?.messages || [];\nconst symbol = response?.symbol || {};\n\n// Count sentiments\nlet bullishCount = 0;\nlet bearishCount = 0;\nlet neutralCount = 0;\n\nconst topPosts = [];\n\nfor (const msg of messages.slice(0, 30)) {\n  const sentiment = msg.entities?.sentiment?.basic;\n  \n  if (sentiment === 'Bullish') bullishCount++;\n  else if (sentiment === 'Bearish') bearishCount++;\n  else neutralCount++;\n  \n  topPosts.push({\n    body: (msg.body || '').substring(0, 150),\n    sentiment: sentiment || 'Neutral',\n    likes: msg.likes?.total || 0,\n    created_at: msg.created_at,\n    username: msg.user?.username || 'anonymous'\n  });\n}\n\nconst totalPosts = messages.length;\nconst avgSentiment = totalPosts > 0 \n  ? (bullishCount - bearishCount) / totalPosts \n  : 0;\n\n// Determine signal\nlet sentimentSignal = 'neutral';\nif (bullishCount > bearishCount * 2) sentimentSignal = 'bullish';\nelse if (bearishCount > bullishCount * 2) sentimentSignal = 'bearish';\n\n// Phil Fisher insight\nlet philInsight = '';\nif (sentimentSignal === 'bullish') {\n  philInsight = `Strong positive buzz around ${ticker} on StockTwits. ${bullishCount} bullish vs ${bearishCount} bearish posts. Verify with fundamentals before acting.`;\n} else if (sentimentSignal === 'bearish') {\n  philInsight = `Negative sentiment for ${ticker}. ${bearishCount} bearish vs ${bullishCount} bullish posts. Could be a contrarian opportunity or legitimate concerns.`;\n} else {\n  philInsight = `Mixed sentiment for ${ticker}. No strong conviction from the crowd. ${bullishCount} bullish, ${bearishCount} bearish, ${neutralCount} neutral.`;\n}\n\n// Build result\nconst result = {\n  ticker: ticker,\n  company_name: companyName,\n  timestamp: new Date().toISOString(),\n  \n  summary: {\n    total_posts: totalPosts,\n    avg_sentiment: avgSentiment,\n    sentiment_signal: sentimentSignal,\n    bullish_count: bullishCount,\n    bearish_count: bearishCount,\n    neutral_count: neutralCount,\n    watchlist_count: symbol.watchlist_count || 0\n  },\n  \n  key_topics: [], // StockTwits doesn't provide topics easily\n  \n  top_posts: topPosts\n    .sort((a, b) => b.likes - a.likes)\n    .slice(0, 5),\n  \n  phil_fisher_insight: philInsight\n};\n\nreturn [{ json: result }];"
+            },
+            "name": "Analyze Sentiment",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                400,
+                200
+            ],
+            "id": "analyze-sentiment"
+        },
+        {
+            "parameters": {
+                "tableId": "scuttlebutt_data",
+                "fieldsUi": {
+                    "fieldValues": [
+                        {
+                            "fieldId": "ticker",
+                            "fieldValue": "={{ $json.ticker }}"
+                        },
+                        {
+                            "fieldId": "company_name",
+                            "fieldValue": "={{ $json.company_name }}"
+                        },
+                        {
+                            "fieldId": "timestamp",
+                            "fieldValue": "={{ $json.timestamp }}"
+                        },
+                        {
+                            "fieldId": "total_posts",
+                            "fieldValue": "={{ $json.summary.total_posts }}"
+                        },
+                        {
+                            "fieldId": "avg_sentiment",
+                            "fieldValue": "={{ $json.summary.avg_sentiment }}"
+                        },
+                        {
+                            "fieldId": "sentiment_signal",
+                            "fieldValue": "={{ $json.summary.sentiment_signal }}"
+                        },
+                        {
+                            "fieldId": "wsb_mentions",
+                            "fieldValue": "={{ $json.summary.bullish_count }}"
+                        },
+                        {
+                            "fieldId": "stocks_mentions",
+                            "fieldValue": "={{ $json.summary.bearish_count }}"
+                        },
+                        {
+                            "fieldId": "investing_mentions",
+                            "fieldValue": "={{ $json.summary.neutral_count }}"
+                        },
+                        {
+                            "fieldId": "top_posts",
+                            "fieldValue": "={{ JSON.stringify($json.top_posts) }}"
+                        },
+                        {
+                            "fieldId": "phil_fisher_insight",
+                            "fieldValue": "={{ $json.phil_fisher_insight }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Save to Supabase",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                600,
+                200
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "save-scuttlebutt"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "typeValidation": "strict"
+                    },
+                    "combinator": "or",
+                    "conditions": [
+                        {
+                            "leftValue": "={{ $json.summary.sentiment_signal }}",
+                            "rightValue": "bullish",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        },
+                        {
+                            "leftValue": "={{ $json.summary.sentiment_signal }}",
+                            "rightValue": "bearish",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        }
+                    ]
+                }
+            },
+            "name": "IF Strong Sentiment",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                800,
+                200
+            ],
+            "id": "if-strong"
+        },
+        {
+            "parameters": {
+                "chatId": "-4820408060",
+                "text": "=📢 *Scuttlebutt Alert: {{ $json.ticker }}*\n\n{{ $json.summary.sentiment_signal === 'bullish' ? '🟢' : '🔴' }} Sentiment: {{ $json.summary.sentiment_signal.toUpperCase() }}\n\n📊 *StockTwits Data:*\n• 🟢 Bullish: {{ $json.summary.bullish_count }}\n• 🔴 Bearish: {{ $json.summary.bearish_count }}\n• ⚪ Neutral: {{ $json.summary.neutral_count }}\n• 👀 Watchlist: {{ $json.summary.watchlist_count }}\n\n💡 *Phil Fisher Insight:*\n{{ $json.phil_fisher_insight }}\n\n🕐 {{ $now.format('dd/MM/yyyy HH:mm') }}",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "name": "Alert Telegram",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                1000,
+                150
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "alert-telegram"
+        },
+        {
+            "parameters": {},
+            "name": "Continue Loop",
+            "type": "n8n-nodes-base.noOp",
+            "typeVersion": 1,
+            "position": [
+                1000,
+                300
+            ],
+            "id": "continue-loop"
+        }
+    ],
+    "connections": {
+        "Cron Trigger (Weekdays 08:00)": {
+            "main": [
+                [
+                    {
+                        "node": "Get Watchlist",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Watchlist": {
+            "main": [
+                [
+                    {
+                        "node": "Loop Over Tickers",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Loop Over Tickers": {
+            "main": [
+                [
+                    {
+                        "node": "StockTwits - Get Messages",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "StockTwits - Get Messages": {
+            "main": [
+                [
+                    {
+                        "node": "Analyze Sentiment",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Analyze Sentiment": {
+            "main": [
+                [
+                    {
+                        "node": "Save to Supabase",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save to Supabase": {
+            "main": [
+                [
+                    {
+                        "node": "IF Strong Sentiment",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "IF Strong Sentiment": {
+            "main": [
+                [
+                    {
+                        "node": "Alert Telegram",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Continue Loop",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Alert Telegram": {
+            "main": [
+                [
+                    {
+                        "node": "Continue Loop",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Continue Loop": {
+            "main": [
+                [
+                    {
+                        "node": "Loop Over Tickers",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1",
+        "timezone": "Europe/Madrid"
+    },
+    "tags": [
+        "scuttlebutt",
+        "stocktwits",
+        "sentiment",
+        "fisher"
+    ]
+}

@@ -1,0 +1,500 @@
+{
+  "name": "AI Hedge Fund - Daily Analysis (Supabase Edge)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "name": "Cron Trigger (Weekdays 09:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        -944,
+        192
+      ],
+      "id": "d5e20cc2-e589-4b97-ac6b-49f24d28d8f1"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "watchlists",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "alert_enabled=eq.true"
+      },
+      "name": "Get Watchlist from Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -736,
+        192
+      ],
+      "id": "7e94f3c5-3ec2-4183-a290-744206eb9f60",
+      "credentials": {
+        "supabaseApi": {
+          "id": "W2X8BWyusvwAEBsB",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Loop Over Tickers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        192
+      ],
+      "id": "23a215dc-2069-47d7-a679-83df43a04fa5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"ticker\": \"{{ $json.ticker }}\",\n  \"end_date\": \"{{ $now.format('yyyy-MM-dd') }}\",\n  \"llm_provider\": \"gemini\",\n  \"agents\": [\n    \"warren_buffett\",\n    \"peter_lynch\",\n    \"ben_graham\",\n    \"charlie_munger\",\n    \"michael_burry\",\n    \"cathie_wood\",\n    \"bill_ackman\",\n    \"stanley_druckenmiller\",\n    \"phil_fisher\",\n    \"mohnish_pabrai\",\n    \"rakesh_jhunjhunwala\",\n    \"aswath_damodaran\",\n    \"technical_analyst\",\n    \"fundamentals_analyst\",\n    \"growth_analyst\",\n    \"news_sentiment_analyst\",\n    \"sentiment_analyst\"\n  ]\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "Call Supabase Aggregate Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -336,
+        192
+      ],
+      "id": "8e11972b-95bd-4328-9c09-e5b45fe2c815",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "4su2l4bSjSuWKNs2",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// TRANSFORM AGGREGATE RESPONSE (FINAL)\n// ============================================\n\nconst response = $json;\nconst ticker = response.ticker;\nconst timestamp = response.timestamp;\n\n// 1. ANA KAYIT (Main Record) - analyses_aggregated için\nconst mainRecord = {\n  ticker: ticker,\n  aggregated_signal: response.aggregated_signal,\n  aggregated_confidence: response.aggregated_confidence,\n  bullish_count: response.bullish_count,\n  bearish_count: response.bearish_count,\n  neutral_count: response.neutral_count,\n  total_agents: (response.agent_results || []).length,\n  created_at: timestamp\n};\n\n// 2. DETAY KAYITLARI (Detailed Records) - analyses_detailed için\nconst agentRecords = (response.agent_results || []).map(agent => ({\n  ticker: ticker,\n  agent: agent.agent,\n  agent_display_name: agent.agent_display_name,\n  signal: agent.signal,\n  confidence: agent.confidence,\n  reasoning: (agent.reasoning || '').substring(0, 1000), // Uzun metni kes\n  created_at: timestamp\n}));\n\n// Çıktıyı n8n'e iki ayrı nesne olarak veriyoruz ki sonraki node'larda erişebilesin\nreturn [\n  {\n    json: {\n      // Ana kayıt verileri kök dizinde (kolay erişim için)\n      ...mainRecord,\n      \n      // Gruplanmış veriler (düzenli dursun diye)\n      main_record: mainRecord,\n      \n      // Detay listesi (bunu Save Agent Details kullanacak)\n      agent_records: agentRecords\n    }\n  }\n];"
+      },
+      "name": "Transform Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        192
+      ],
+      "id": "63c8d0b6-e242-4379-9f85-dc237510b7ad"
+    },
+    {
+      "parameters": {
+        "tableId": "analyses_aggregated",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "ticker",
+              "fieldValue": "={{ $json.main_record.ticker }}"
+            },
+            {
+              "fieldId": "aggregated_signal",
+              "fieldValue": "={{ $json.main_record.aggregated_signal }}"
+            },
+            {
+              "fieldId": "aggregated_confidence",
+              "fieldValue": "={{ $json.main_record.aggregated_confidence }}"
+            },
+            {
+              "fieldId": "bullish_count",
+              "fieldValue": "={{ $json.main_record.bullish_count }}"
+            },
+            {
+              "fieldId": "bearish_count",
+              "fieldValue": "={{ $json.main_record.bearish_count }}"
+            },
+            {
+              "fieldId": "total_agents",
+              "fieldValue": "={{ $json.main_record.total_agents }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $json.main_record.created_at }}"
+            },
+            {
+              "fieldId": "neutral_count",
+              "fieldValue": "={{ $json.main_record.neutral_count }}"
+            }
+          ]
+        }
+      },
+      "name": "Save Aggregated Analysis",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        64,
+        48
+      ],
+      "id": "993d3de9-5491-4de8-a57b-7be3dea33f16",
+      "credentials": {
+        "supabaseApi": {
+          "id": "W2X8BWyusvwAEBsB",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "analyses_detailed",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "ticker",
+              "fieldValue": "={{ $json.ticker }}"
+            },
+            {
+              "fieldId": "agent",
+              "fieldValue": "={{ $json.agent }}"
+            },
+            {
+              "fieldId": "agent_display_name",
+              "fieldValue": "={{ $json.agent_display_name }}"
+            },
+            {
+              "fieldId": "signal",
+              "fieldValue": "={{ $json.signal }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ $json.confidence }}"
+            },
+            {
+              "fieldId": "reasoning",
+              "fieldValue": "={{ $json.reasoning }}"
+            }
+          ]
+        }
+      },
+      "name": "Save Agent Details",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        304,
+        480
+      ],
+      "id": "f83c72e6-1b1a-42e7-a68c-d5b9e56b2a02",
+      "credentials": {
+        "supabaseApi": {
+          "id": "W2X8BWyusvwAEBsB",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.aggregated_signal }}",
+              "rightValue": "BULLISH",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "fee6d19e-c09e-4410-be93-0edc33df4cd1"
+            },
+            {
+              "leftValue": "={{ $json.aggregated_confidence }}",
+              "rightValue": 70,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              },
+              "id": "69d07612-8f70-4010-a563-8a8c9e9182f7"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "IF Strong Signal",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        272,
+        192
+      ],
+      "id": "c69de672-c429-40fa-be04-b9374483c9f2"
+    },
+    {
+      "parameters": {
+        "chatId": "-4820408060",
+        "text": "=🟢 *STRONG BULLISH SIGNAL*\n\n📊 *{{ $json.ticker }}*\n\n• Aggregated Signal: {{ $json.aggregated_signal }}\n• Confidence: {{ $json.aggregated_confidence }}%\n• Bullish Agents: {{ $json.main_record.bullish_count }}/{{ $json.main_record.total_agents }}\n• Bearish Agents: {{ $json.main_record.bearish_count }}/{{ $json.main_record.total_agents }}\n\n_Generated by AI Hedge Fund via Supabase Edge Functions_\n🕐 {{ $now.format('yyyy-MM-dd HH:mm') }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        464,
+        96
+      ],
+      "id": "03361f57-555b-4a0c-bfe7-72be9e117b8e",
+      "webhookId": "75951fc6-ed73-4ff0-ae83-0e44eb000be7",
+      "credentials": {
+        "telegramApi": {
+          "id": "3ocfCvvjIk4mgxda",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pageId": {
+          "__rl": true,
+          "value": "2d2ca1ef-3d49-80ce-835c-000b83c106d6",
+          "mode": "id"
+        },
+        "title": "Signal",
+        "options": {}
+      },
+      "name": "Append to Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        464,
+        304
+      ],
+      "id": "48d14aa1-1bf2-4cdf-98f1-b4ddca566df5",
+      "credentials": {
+        "notionApi": {
+          "id": "ICa0fqMBplWZztF8",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "name": "Continue Loop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        672,
+        192
+      ],
+      "id": "ca1bba29-42fb-45d4-bd53-944be8460313"
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentRecords = $input.first().json.agent_records || [];\nreturn agentRecords.map(item => ({ json: item }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        384
+      ],
+      "id": "93e54527-9f82-42cc-97c7-1e2899135cf6",
+      "name": "Split Records"
+    }
+  ],
+  "pinData": {
+    "Cron Trigger (Weekdays 09:00)": [
+      {
+        "json": {
+          "timestamp": "2025-12-23T15:57:08.559-05:00",
+          "Readable date": "December 23rd 2025, 3:57:08 pm",
+          "Readable time": "3:57:08 pm",
+          "Day of week": "Tuesday",
+          "Year": "2025",
+          "Month": "December",
+          "Day of month": "23",
+          "Hour": "15",
+          "Minute": "57",
+          "Second": "08",
+          "Timezone": "Europe/Madrid (UTC+01:00)"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Cron Trigger (Weekdays 09:00)": {
+      "main": [
+        [
+          {
+            "node": "Get Watchlist from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Watchlist from Supabase": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tickers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Tickers": {
+      "main": [
+        [
+          {
+            "node": "Call Supabase Aggregate Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Supabase Aggregate Analysis": {
+      "main": [
+        [
+          {
+            "node": "Transform Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Response": {
+      "main": [
+        [
+          {
+            "node": "Save Aggregated Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF Strong Signal",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Strong Signal": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append to Notion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Continue Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Alert": {
+      "main": [
+        [
+          {
+            "node": "Continue Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Notion": {
+      "main": [
+        [
+          {
+            "node": "Continue Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Loop": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tickers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Records": {
+      "main": [
+        [
+          {
+            "node": "Save Agent Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "2c17def2-6b0d-49c1-8f26-82f188af4ab8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a543e5018053c03df832d6ac73af6c1a33f61d9045f4d98453e98d306a4b77f2"
+  },
+  "id": "S7NH95bfnAlx0Gjf",
+  "tags": []
+}

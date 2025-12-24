@@ -31,6 +31,7 @@ class ModelProvider(str, Enum):
     GIGACHAT = "GigaChat"
     AZURE_OPENAI = "Azure OpenAI"
     XAI = "xAI"
+    ZAI = "Z.ai"
 
 
 class LLMModel(BaseModel):
@@ -236,3 +237,14 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             print(f"Azure Deployment Name Error: Please make sure AZURE_OPENAI_DEPLOYMENT_NAME is set in your .env file.")
             raise ValueError("Azure OpenAI deployment name not found.  Please make sure AZURE_OPENAI_DEPLOYMENT_NAME is set in your .env file.")
         return AzureChatOpenAI(azure_endpoint=azure_endpoint, azure_deployment=azure_deployment_name, api_key=api_key, api_version="2024-10-21")
+    elif model_provider == ModelProvider.ZAI:
+        api_key = (api_keys or {}).get("ZAI_API_KEY") or os.getenv("ZAI_API_KEY")
+        if not api_key:
+            print(f"API Key Error: Please make sure ZAI_API_KEY is set in your .env file or provided via API keys.")
+            raise ValueError("Z.ai API key not found. Please make sure ZAI_API_KEY is set in your .env file or provided via API keys.")
+        return ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            base_url="https://api.z.ai/api/paas/v4/",
+            extra_body={"thinking": {"type": "enabled"}} if model_name == "glm-4.7" else {}
+        )

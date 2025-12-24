@@ -1,0 +1,316 @@
+{
+    "name": "AI Hedge Fund - Strong Signal Alert (Telegram Bot)",
+    "nodes": [
+        {
+            "parameters": {
+                "updates": [
+                    "message"
+                ],
+                "additionalFields": {}
+            },
+            "name": "Telegram Trigger",
+            "type": "n8n-nodes-base.telegramTrigger",
+            "typeVersion": 1,
+            "position": [
+                -600,
+                200
+            ],
+            "webhookId": "telegram-signal-trigger",
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "telegram-trigger"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse Telegram message to extract ticker\nconst message = $json.message?.text || '';\nconst chatId = $json.message?.chat?.id;\nconst firstName = $json.message?.from?.first_name || 'User';\n\n// Check if it's an analyze command\nconst analyzeMatch = message.match(/^\\/analyze\\s+([A-Za-z]+)/i);\nconst tickerMatch = message.match(/^([A-Za-z]{1,5})$/i);\n\nlet ticker = null;\nlet isValidCommand = false;\n\nif (analyzeMatch) {\n  ticker = analyzeMatch[1].toUpperCase();\n  isValidCommand = true;\n} else if (tickerMatch) {\n  ticker = tickerMatch[1].toUpperCase();\n  isValidCommand = true;\n}\n\nif (!isValidCommand || !ticker) {\n  return [{\n    json: {\n      isValid: false,\n      chatId: chatId,\n      errorMessage: `Merhaba ${firstName}! 👋\\n\\nKullanım:\\n• /analyze AAPL\\n• veya sadece: NVDA\\n\\nÖrnek: /analyze TSLA`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    isValid: true,\n    ticker: ticker,\n    chatId: chatId,\n    firstName: firstName\n  }\n}];"
+            },
+            "name": "Parse Command",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -400,
+                200
+            ],
+            "id": "parse-command"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                        {
+                            "leftValue": "={{ $json.isValid }}",
+                            "rightValue": true,
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "equals"
+                            }
+                        }
+                    ]
+                }
+            },
+            "name": "IF Valid Command",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                -200,
+                200
+            ],
+            "id": "if-valid"
+        },
+        {
+            "parameters": {
+                "chatId": "={{ $json.chatId }}",
+                "text": "={{ $json.errorMessage }}",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "name": "Send Error Message",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                0,
+                350
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "send-error"
+        },
+        {
+            "parameters": {
+                "chatId": "={{ $json.chatId }}",
+                "text": "=⏳ *{{ $json.ticker }}* analiz ediliyor...\n\n17 AI yatırımcı agent çalıştırılıyor, bu 30-60 saniye sürebilir.",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "name": "Send Processing Message",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                0,
+                100
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "send-processing"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"ticker\": \"{{ $node['Parse Command'].json.ticker }}\",\n  \"llm_provider\": \"gemini\",\n  \"agents\": [\n    \"warren_buffett\",\n    \"peter_lynch\",\n    \"ben_graham\",\n    \"charlie_munger\",\n    \"michael_burry\",\n    \"cathie_wood\",\n    \"bill_ackman\",\n    \"stanley_druckenmiller\",\n    \"phil_fisher\",\n    \"mohnish_pabrai\",\n    \"rakesh_jhunjhunwala\",\n    \"aswath_damodaran\",\n    \"technical_analyst\",\n    \"fundamentals_analyst\",\n    \"growth_analyst\",\n    \"news_sentiment_analyst\",\n    \"sentiment_analyst\"\n  ]\n}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "name": "Call Supabase Aggregate",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                200,
+                100
+            ],
+            "id": "call-aggregate"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Format the analysis result for Telegram\nconst data = $json;\nconst chatId = $node['Parse Command'].json.chatId;\nconst ticker = data.ticker;\n\nconst signalEmoji = data.aggregated_signal === 'BULLISH' ? '🟢' : data.aggregated_signal === 'BEARISH' ? '🔴' : '⚪';\n\n// Agent breakdown\nconst agentLines = (data.agent_results || []).map(agent => {\n  const emoji = agent.signal === 'BULLISH' ? '🟢' : agent.signal === 'BEARISH' ? '🔴' : '⚪';\n  return `${emoji} ${agent.agent_display_name}: ${agent.signal} (${agent.confidence}%)`;\n}).join('\\n');\n\n// Build message\nconst message = `\n${signalEmoji} *${ticker} - ${data.aggregated_signal}*\n\n📊 *Özet:*\n• Sinyal: ${data.aggregated_signal}\n• Güven: ${data.aggregated_confidence}%\n• 🟢 Bullish: ${data.bullish_count}\n• 🔴 Bearish: ${data.bearish_count}\n• ⚪ Neutral: ${data.neutral_count}\n\n👥 *Agent Detayları:*\n${agentLines}\n\n🕐 ${new Date().toLocaleString('tr-TR')}\n`;\n\nreturn [{\n  json: {\n    chatId: chatId,\n    message: message,\n    ...data\n  }\n}];"
+            },
+            "name": "Format Result",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                400,
+                100
+            ],
+            "id": "format-result"
+        },
+        {
+            "parameters": {
+                "chatId": "={{ $json.chatId }}",
+                "text": "={{ $json.message }}",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "name": "Send Result",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                600,
+                100
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "send-result"
+        },
+        {
+            "parameters": {
+                "tableId": "notifications",
+                "fieldsUi": {
+                    "fieldValues": [
+                        {
+                            "fieldId": "ticker",
+                            "fieldValue": "={{ $json.ticker }}"
+                        },
+                        {
+                            "fieldId": "title",
+                            "fieldValue": "={{ $json.aggregated_signal }} Signal (Manual)"
+                        },
+                        {
+                            "fieldId": "message",
+                            "fieldValue": "={{ $json.message }}"
+                        },
+                        {
+                            "fieldId": "type",
+                            "fieldValue": "SIGNAL"
+                        }
+                    ]
+                }
+            },
+            "name": "Log to Database",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                600,
+                250
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "log-db"
+        }
+    ],
+    "connections": {
+        "Telegram Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Command",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Command": {
+            "main": [
+                [
+                    {
+                        "node": "IF Valid Command",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "IF Valid Command": {
+            "main": [
+                [
+                    {
+                        "node": "Send Processing Message",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Send Error Message",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Send Processing Message": {
+            "main": [
+                [
+                    {
+                        "node": "Call Supabase Aggregate",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call Supabase Aggregate": {
+            "main": [
+                [
+                    {
+                        "node": "Format Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Format Result": {
+            "main": [
+                [
+                    {
+                        "node": "Send Result",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Log to Database",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1",
+        "timezone": "Europe/Madrid"
+    },
+    "tags": [
+        "telegram",
+        "signal",
+        "manual"
+    ]
+}

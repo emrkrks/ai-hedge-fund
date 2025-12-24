@@ -4,6 +4,7 @@ import json
 from pydantic import BaseModel
 from src.llm.models import get_model, get_model_info
 from src.utils.progress import progress
+import time
 from src.graph.state import AgentState
 
 
@@ -71,7 +72,11 @@ def call_llm(
 
         except Exception as e:
             if agent_name:
-                progress.update_status(agent_name, None, f"Error - retry {attempt + 1}/{max_retries}")
+                progress.update_status(agent_name=agent_name, ticker=None, status=f"Error - retry {attempt + 1}/{max_retries}")
+            
+            # Add a delay before retrying (exponential backoff)
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
 
             if attempt == max_retries - 1:
                 print(f"Error in LLM call after {max_retries} attempts: {e}")

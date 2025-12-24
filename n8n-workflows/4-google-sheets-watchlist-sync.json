@@ -1,0 +1,174 @@
+{
+    "name": "Google Sheets Watchlist Sync",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "30 8 * * 1-5"
+                        }
+                    ]
+                }
+            },
+            "name": "Cron Trigger (Weekdays 08:30)",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1,
+            "position": [
+                -400,
+                200
+            ],
+            "id": "cron-trigger"
+        },
+        {
+            "parameters": {
+                "operation": "read",
+                "sheetId": {
+                    "__rl": true,
+                    "value": "YOUR_GOOGLE_SHEET_ID",
+                    "mode": "id"
+                },
+                "range": "Watchlist!A2:B100",
+                "options": {}
+            },
+            "name": "Read Google Sheets Watchlist",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4,
+            "position": [
+                -200,
+                200
+            ],
+            "credentials": {
+                "googleSheetsOAuth2Api": {
+                    "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+                    "name": "Google Sheets Account"
+                }
+            },
+            "id": "read-sheets"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Transform Google Sheets data\nconst items = $input.all();\nconst tickers = [];\n\nfor (const item of items) {\n  const row = item.json;\n  // Assuming column A = ticker, column B = alert_enabled\n  if (row[0] && row[0].trim()) {\n    tickers.push({\n      ticker: row[0].trim().toUpperCase(),\n      alert_enabled: row[1] ? row[1].toLowerCase() === 'true' : true\n    });\n  }\n}\n\nreturn tickers.map(t => ({ json: t }));"
+            },
+            "name": "Transform Tickers",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                0,
+                200
+            ],
+            "id": "transform-tickers"
+        },
+        {
+            "parameters": {
+                "tableId": "watchlists",
+                "fieldsUi": {
+                    "fieldValues": [
+                        {
+                            "fieldId": "ticker",
+                            "fieldValue": "={{ $json.ticker }}"
+                        },
+                        {
+                            "fieldId": "alert_enabled",
+                            "fieldValue": "={{ $json.alert_enabled }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Upsert to Supabase Watchlist",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                200,
+                200
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "upsert-watchlist"
+        },
+        {
+            "parameters": {
+                "chatId": "-4820408060",
+                "text": "=✅ *Watchlist Senkronize Edildi!*\n\n📊 Toplam ticker güncellendi.\n🕐 {{ $now.format('dd/MM/yyyy HH:mm') }}",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "name": "Notify Telegram (Success)",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                400,
+                200
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "notify-telegram"
+        }
+    ],
+    "connections": {
+        "Cron Trigger (Weekdays 08:30)": {
+            "main": [
+                [
+                    {
+                        "node": "Read Google Sheets Watchlist",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Read Google Sheets Watchlist": {
+            "main": [
+                [
+                    {
+                        "node": "Transform Tickers",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Transform Tickers": {
+            "main": [
+                [
+                    {
+                        "node": "Upsert to Supabase Watchlist",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Upsert to Supabase Watchlist": {
+            "main": [
+                [
+                    {
+                        "node": "Notify Telegram (Success)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1",
+        "timezone": "Europe/Madrid"
+    },
+    "tags": [
+        "sync",
+        "google-sheets",
+        "watchlist"
+    ]
+}

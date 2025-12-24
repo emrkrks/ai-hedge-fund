@@ -1,0 +1,486 @@
+{
+    "name": "Daily Portfolio Analysis (Single Workflow)",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "0 16 * * 1-5"
+                        }
+                    ]
+                }
+            },
+            "name": "Cron (16:00)",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1,
+            "position": [
+                -800,
+                300
+            ],
+            "id": "cron"
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID_HERE",
+                "options": {
+                    "response": {
+                        "response": {
+                            "responseFormat": "text"
+                        }
+                    },
+                    "timeout": 30000
+                }
+            },
+            "name": "Download CSV",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                -600,
+                300
+            ],
+            "id": "download-csv"
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForAllItems",
+                "jsCode": "const csvText = $input.first().json.data || $input.first().json.body || String($input.first().json);\nconst lines = csvText.split('\\n').filter(line => line.trim());\nif (lines.length < 2) throw new Error('CSV is empty');\nconst headers = lines[0].split(',').map(h => h.replace(/\"/g, '').trim());\nconst rows = [];\nfor (let i = 1; i < lines.length; i++) {\n  const values = [];\n  let current = '', inQuotes = false;\n  for (const char of lines[i]) {\n    if (char === '\"') inQuotes = !inQuotes;\n    else if (char === ',' && !inQuotes) { values.push(current.trim()); current = ''; }\n    else current += char;\n  }\n  values.push(current.trim());\n  const row = {};\n  headers.forEach((h, idx) => { row[h] = values[idx] || ''; });\n  rows.push({ json: row });\n}\nreturn rows;"
+            },
+            "name": "Parse CSV",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -400,
+                300
+            ],
+            "id": "parse-csv"
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForAllItems",
+                "jsCode": "const items = $input.all();\nconst positions = {};\nfor (const item of items) {\n  const row = item.json;\n  const way = row.Way || '';\n  const baseType = row['Base type'] || '';\n  if (!way || way === 'Way' || baseType !== 'STOCK') continue;\n  if (way !== 'BUY' && way !== 'SELL') continue;\n  const baseCurrency = row['Base currency (name)'] || '';\n  const tickerMatch = baseCurrency.match(/^([A-Z0-9.]+)\\s*\\(/);\n  if (!tickerMatch) continue;\n  const ticker = tickerMatch[1].replace('.MC', '');\n  const companyName = baseCurrency.match(/\\(([^)]+)\\)/)?.[1] || ticker;\n  const amount = parseFloat(row['Base amount']) || 0;\n  const quoteAmount = parseFloat(row['Quote amount']) || 0;\n  if (!positions[ticker]) positions[ticker] = { ticker, company_name: companyName, total_shares: 0, total_cost: 0 };\n  if (way === 'BUY') { positions[ticker].total_shares += amount; positions[ticker].total_cost += quoteAmount; }\n  else if (way === 'SELL') {\n    positions[ticker].total_shares -= amount;\n    if (positions[ticker].total_shares > 0) positions[ticker].total_cost *= positions[ticker].total_shares / (positions[ticker].total_shares + amount);\n    else positions[ticker].total_cost = 0;\n  }\n}\nconst active = Object.values(positions).filter(p => p.total_shares > 0.0001).map(p => ({\n  ticker: p.ticker, company_name: p.company_name,\n  shares: Math.round(p.total_shares * 1000000) / 1000000,\n  total_cost: Math.round(Math.abs(p.total_cost) * 100) / 100,\n  avg_cost: Math.round((p.total_cost / p.total_shares) * 100) / 100\n}));\n// Clear static data at start\nconst staticData = $getWorkflowStaticData('global');\nstaticData.results = [];\nreturn active.map(p => ({ json: p }));"
+            },
+            "name": "Aggregate Positions",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -200,
+                300
+            ],
+            "id": "aggregate"
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "name": "Loop",
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 3,
+            "position": [
+                0,
+                300
+            ],
+            "id": "loop"
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "=https://query1.finance.yahoo.com/v8/finance/chart/{{ $json.ticker }}?interval=1d&range=5d",
+                "options": {
+                    "timeout": 15000
+                }
+            },
+            "name": "Yahoo Price",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                200,
+                300
+            ],
+            "id": "yahoo"
+        },
+        {
+            "parameters": {
+                "jsCode": "const yahoo = $('Yahoo Price').first().json;\nconst h = $('Loop').first().json;\ntry {\n  const meta = yahoo.chart?.result?.[0]?.meta || {};\n  const price = meta.regularMarketPrice || 0;\n  const prev = meta.chartPreviousClose || price;\n  const value = h.shares * price;\n  const pl = value - h.total_cost;\n  const plPct = h.total_cost > 0 ? (pl / h.total_cost) * 100 : 0;\n  const dailyPL = h.shares * (price - prev);\n  return [{ json: { ticker: h.ticker, company_name: h.company_name, shares: h.shares, avg_cost: h.avg_cost, total_cost: h.total_cost, current_price: Math.round(price*100)/100, current_value: Math.round(value*100)/100, unrealized_pl: Math.round(pl*100)/100, unrealized_pl_pct: Math.round(plPct*100)/100, daily_pl: Math.round(dailyPL*100)/100 }}];\n} catch(e) { return [{ json: { ...h, current_price: 0, error: e.message }}]; }"
+            },
+            "name": "Calculate P&L",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                400,
+                300
+            ],
+            "id": "calc-pl"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={ \"ticker\": \"{{ $json.ticker }}\", \"end_date\": \"{{ $now.format('yyyy-MM-dd') }}\", \"llm_provider\": \"gemini\", \"agents\": [\"warren_buffett\",\"peter_lynch\",\"ben_graham\",\"charlie_munger\",\"michael_burry\",\"cathie_wood\",\"bill_ackman\",\"stanley_druckenmiller\",\"phil_fisher\",\"mohnish_pabrai\",\"rakesh_jhunjhunwala\",\"aswath_damodaran\",\"technical_analyst\",\"fundamentals_analyst\",\"growth_analyst\",\"news_sentiment_analyst\",\"sentiment_analyst\"] }",
+                "options": {
+                    "timeout": 180000
+                }
+            },
+            "name": "AI Analysis (17 Agents)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                600,
+                300
+            ],
+            "id": "ai"
+        },
+        {
+            "parameters": {
+                "jsCode": "const pl = $('Calculate P&L').first().json;\nconst ai = $('AI Analysis (17 Agents)').first().json;\nconst signal = ai.aggregated_signal || 'N/A';\nconst conf = ai.aggregated_confidence || 0;\nlet rec = 'HOLD';\nif (signal === 'BULLISH' && conf >= 70) rec = 'ACCUMULATE';\nelse if (signal === 'BULLISH') rec = 'HOLD/BUY';\nelse if (signal === 'BEARISH' && conf >= 70) rec = 'SELL';\nelse if (signal === 'BEARISH') rec = 'WATCH';\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.results) staticData.results = [];\nstaticData.results.push({ ...pl, ai_signal: signal, ai_confidence: conf, recommendation: rec });\nreturn [{ json: { ...pl, ai_signal: signal, ai_confidence: conf, recommendation: rec } }];"
+            },
+            "name": "Merge & Store",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                800,
+                300
+            ],
+            "id": "merge"
+        },
+        {
+            "parameters": {
+                "tableId": "portfolio_analyses",
+                "fieldsUi": {
+                    "fieldValues": [
+                        {
+                            "fieldId": "ticker",
+                            "fieldValue": "={{ $json.ticker }}"
+                        },
+                        {
+                            "fieldId": "shares",
+                            "fieldValue": "={{ $json.shares }}"
+                        },
+                        {
+                            "fieldId": "buy_price",
+                            "fieldValue": "={{ $json.avg_cost }}"
+                        },
+                        {
+                            "fieldId": "current_price",
+                            "fieldValue": "={{ $json.current_price }}"
+                        },
+                        {
+                            "fieldId": "total_cost",
+                            "fieldValue": "={{ $json.total_cost }}"
+                        },
+                        {
+                            "fieldId": "current_value",
+                            "fieldValue": "={{ $json.current_value }}"
+                        },
+                        {
+                            "fieldId": "unrealized_pl",
+                            "fieldValue": "={{ $json.unrealized_pl }}"
+                        },
+                        {
+                            "fieldId": "unrealized_pl_percent",
+                            "fieldValue": "={{ $json.unrealized_pl_pct }}"
+                        },
+                        {
+                            "fieldId": "daily_pl",
+                            "fieldValue": "={{ $json.daily_pl }}"
+                        },
+                        {
+                            "fieldId": "ai_signal",
+                            "fieldValue": "={{ $json.ai_signal }}"
+                        },
+                        {
+                            "fieldId": "ai_confidence",
+                            "fieldValue": "={{ $json.ai_confidence }}"
+                        },
+                        {
+                            "fieldId": "recommendation",
+                            "fieldValue": "={{ $json.recommendation }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Save to DB",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                1000,
+                300
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "save-db"
+        },
+        {
+            "parameters": {},
+            "name": "Next",
+            "type": "n8n-nodes-base.noOp",
+            "typeVersion": 1,
+            "position": [
+                1200,
+                300
+            ],
+            "id": "next"
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForAllItems",
+                "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst holdings = staticData.results || [];\nif (!holdings.length) return [{ json: { summary_text: '⚠️ Veri bulunamadı!' } }];\nlet totalCost = 0, totalValue = 0, totalDailyPL = 0, totalPL = 0;\nconst lines = [];\nholdings.sort((a,b) => (b.current_value||0) - (a.current_value||0));\nfor (const h of holdings) {\n  totalCost += h.total_cost || 0;\n  totalValue += h.current_value || 0;\n  totalDailyPL += h.daily_pl || 0;\n  totalPL += h.unrealized_pl || 0;\n  let plE = '⚪';\n  const pct = h.unrealized_pl_pct || 0;\n  if (pct > 20) plE = '🚀'; else if (pct > 5) plE = '🟢'; else if (pct > -5) plE = '⚪'; else if (pct > -20) plE = '🟡'; else plE = '🔴';\n  const dE = (h.daily_pl||0) >= 0 ? '📈' : '📉';\n  const rE = h.ai_signal === 'BULLISH' ? '🟢' : (h.ai_signal === 'BEARISH' ? '🔴' : '⚪');\n  const ps = (h.unrealized_pl||0) >= 0 ? '+' : '';\n  const ds = (h.daily_pl||0) >= 0 ? '+' : '';\n  lines.push(`${plE} *${h.ticker}*\\n   💰 $${(h.current_price||0).toFixed(2)} × ${(h.shares||0).toFixed(2)}\\n   📊 $${(h.total_cost||0).toFixed(0)} → $${(h.current_value||0).toFixed(0)}\\n   ${dE} Gün: ${ds}$${(h.daily_pl||0).toFixed(0)}\\n   📈 Top: ${ps}$${(h.unrealized_pl||0).toFixed(0)} (${ps}${pct.toFixed(1)}%)\\n   🤖 ${rE} ${h.ai_signal||'N/A'} %${h.ai_confidence||0} → ${h.recommendation||'HOLD'}`);\n}\nconst plPct = totalCost > 0 ? (totalPL/totalCost)*100 : 0;\nconst dPct = (totalValue-totalDailyPL) > 0 ? (totalDailyPL/(totalValue-totalDailyPL))*100 : 0;\nlet oE = '⚪'; if (plPct > 20) oE = '🚀'; else if (plPct > 5) oE = '🟢'; else if (plPct > -5) oE = '⚪'; else if (plPct > -20) oE = '🟡'; else oE = '🔴';\nconst dE = totalDailyPL >= 0 ? '📈' : '📉';\nconst now = new Date();\nconst dt = now.toLocaleDateString('tr-TR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});\nconst msg = `📊 *PORTFÖY GÜNLÜK RAPORU*\\n⏰ ${dt}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n${oE} *TOPLAM PORTFÖY*\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n💵 *Yatırım:* $${totalCost.toFixed(0)}\\n💰 *Değer:* $${totalValue.toFixed(0)}\\n\\n${dE} *Günlük:* ${totalDailyPL>=0?'+':''}$${totalDailyPL.toFixed(0)} (${totalDailyPL>=0?'+':''}${dPct.toFixed(2)}%)\\n\\n📈 *Toplam K/Z:* ${totalPL>=0?'+':''}$${totalPL.toFixed(0)} (${totalPL>=0?'+':''}${plPct.toFixed(2)}%)\\n\\n📋 *Pozisyon:* ${holdings.length}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n📋 *POZİSYONLAR*\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n${lines.join('\\n\\n')}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n_🤖 AI Hedge Fund - 17 Agent_`;\nstaticData.results = [];\nreturn [{ json: { summary_text: msg, total_cost: totalCost, total_value: totalValue, total_daily_pl: totalDailyPL, total_pl: totalPL, total_pl_pct: plPct, count: holdings.length } }];"
+            },
+            "name": "Generate Report",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                200,
+                500
+            ],
+            "id": "report"
+        },
+        {
+            "parameters": {
+                "chatId": "-4820408060",
+                "text": "={{ $json.summary_text }}",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "name": "Send Telegram",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                400,
+                500
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
+                }
+            },
+            "id": "telegram"
+        },
+        {
+            "parameters": {
+                "tableId": "portfolio_summaries",
+                "fieldsUi": {
+                    "fieldValues": [
+                        {
+                            "fieldId": "total_cost",
+                            "fieldValue": "={{ $json.total_cost }}"
+                        },
+                        {
+                            "fieldId": "total_value",
+                            "fieldValue": "={{ $json.total_value }}"
+                        },
+                        {
+                            "fieldId": "total_daily_pl",
+                            "fieldValue": "={{ $json.total_daily_pl }}"
+                        },
+                        {
+                            "fieldId": "total_unrealized_pl",
+                            "fieldValue": "={{ $json.total_pl }}"
+                        },
+                        {
+                            "fieldId": "total_pl_percent",
+                            "fieldValue": "={{ $json.total_pl_pct }}"
+                        },
+                        {
+                            "fieldId": "holding_count",
+                            "fieldValue": "={{ $json.count }}"
+                        }
+                    ]
+                }
+            },
+            "name": "Save Summary",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                600,
+                500
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "W2X8BWyusvwAEBsB",
+                    "name": "Supabase account"
+                }
+            },
+            "id": "save-summary"
+        }
+    ],
+    "connections": {
+        "Cron (16:00)": {
+            "main": [
+                [
+                    {
+                        "node": "Download CSV",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Download CSV": {
+            "main": [
+                [
+                    {
+                        "node": "Parse CSV",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse CSV": {
+            "main": [
+                [
+                    {
+                        "node": "Aggregate Positions",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Aggregate Positions": {
+            "main": [
+                [
+                    {
+                        "node": "Loop",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Loop": {
+            "main": [
+                [
+                    {
+                        "node": "Yahoo Price",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Generate Report",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Yahoo Price": {
+            "main": [
+                [
+                    {
+                        "node": "Calculate P&L",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Calculate P&L": {
+            "main": [
+                [
+                    {
+                        "node": "AI Analysis (17 Agents)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Analysis (17 Agents)": {
+            "main": [
+                [
+                    {
+                        "node": "Merge & Store",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge & Store": {
+            "main": [
+                [
+                    {
+                        "node": "Save to DB",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save to DB": {
+            "main": [
+                [
+                    {
+                        "node": "Next",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Next": {
+            "main": [
+                [
+                    {
+                        "node": "Loop",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Generate Report": {
+            "main": [
+                [
+                    {
+                        "node": "Send Telegram",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Save Summary",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1",
+        "timezone": "Europe/Madrid"
+    },
+    "tags": [
+        "portfolio",
+        "daily"
+    ]
+}
