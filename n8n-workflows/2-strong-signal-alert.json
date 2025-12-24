@@ -1,26 +1,35 @@
 {
-    "name": "AI Hedge Fund - Strong Signal Alert (Slack Slash Command)",
+    "name": "AI Hedge Fund - Strong Signal Alert (Slack Bot)",
     "nodes": [
         {
             "parameters": {
-                "httpMethod": "POST",
-                "path": "slack-analyze",
-                "responseMode": "responseNode",
+                "trigger": "onMessage",
+                "channelId": {
+                    "__rl": true,
+                    "mode": "list",
+                    "value": ""
+                },
                 "options": {}
             },
-            "name": "Webhook (Slack Slash Command)",
-            "type": "n8n-nodes-base.webhook",
-            "typeVersion": 2,
+            "name": "Slack Trigger",
+            "type": "n8n-nodes-base.slackTrigger",
+            "typeVersion": 1,
             "position": [
                 -1040,
                 304
             ],
-            "webhookId": "slack-analyze-command",
-            "id": "bf3ba2b6-a533-4367-b7fd-4a941e210aac"
+            "webhookId": "slack-trigger-analyze",
+            "id": "bf3ba2b6-a533-4367-b7fd-4a941e210aac",
+            "credentials": {
+                "slackApi": {
+                    "id": "SLACK_CREDENTIAL_ID",
+                    "name": "Slack account"
+                }
+            }
         },
         {
             "parameters": {
-                "jsCode": "// Parse Slack Slash Command\n// Slack sends: text (command args), channel_id, user_name, response_url\nconst text = $json.body?.text || $json.query?.text || '';\nconst channelId = $json.body?.channel_id || $json.query?.channel_id || '';\nconst userName = $json.body?.user_name || $json.query?.user_name || 'User';\nconst responseUrl = $json.body?.response_url || $json.query?.response_url || '';\n\n// Extract ticker from command text (e.g., /analyze AAPL -> text = 'AAPL')\nconst ticker = text.trim().toUpperCase();\n\nif (!ticker || !/^[A-Z]{1,5}$/.test(ticker)) {\n  return [{\n    json: {\n      isValid: false,\n      channelId: channelId,\n      responseUrl: responseUrl,\n      errorMessage: `Merhaba ${userName}! 👋\\n\\nKullanım: /analyze AAPL\\n\\nÖrnek: /analyze TSLA`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    isValid: true,\n    ticker: ticker,\n    channelId: channelId,\n    userName: userName,\n    responseUrl: responseUrl\n  }\n}];"
+                "jsCode": "// Parse Slack Trigger message\n// Slack Trigger sends: text, channel, user, ts etc.\nconst text = $json.text || '';\nconst channelId = $json.channel || '';\nconst userId = $json.user || '';\nconst userName = $json.user_name || 'User';\n\n// Check if message starts with /analyze or is just a ticker\nconst analyzeMatch = text.match(/^\\/analyze\\s+([A-Za-z]+)/i);\nconst tickerMatch = text.match(/^([A-Z]{1,5})$/i);\n\nlet ticker = null;\nlet isValidCommand = false;\n\nif (analyzeMatch) {\n  ticker = analyzeMatch[1].toUpperCase();\n  isValidCommand = true;\n} else if (tickerMatch) {\n  ticker = tickerMatch[1].toUpperCase();\n  isValidCommand = true;\n}\n\nif (!isValidCommand || !ticker) {\n  return [{\n    json: {\n      isValid: false,\n      channelId: channelId,\n      errorMessage: `Merhaba! 👋\\n\\nKullanım: /analyze AAPL veya sadece AAPL yazın\\n\\nÖrnek: /analyze TSLA`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    isValid: true,\n    ticker: ticker,\n    channelId: channelId,\n    userId: userId,\n    userName: userName\n  }\n}];"
             },
             "name": "Parse Command",
             "type": "n8n-nodes-base.code",
@@ -72,7 +81,7 @@
             },
             "name": "Send Error Message",
             "type": "n8n-nodes-base.slack",
-            "typeVersion": 2.2,
+            "typeVersion": 2.1,
             "position": [
                 -432,
                 448
@@ -94,7 +103,7 @@
             },
             "name": "Send Processing Message",
             "type": "n8n-nodes-base.slack",
-            "typeVersion": 2.2,
+            "typeVersion": 2.1,
             "position": [
                 -432,
                 192
@@ -170,7 +179,7 @@
             },
             "name": "Send Result",
             "type": "n8n-nodes-base.slack",
-            "typeVersion": 2.2,
+            "typeVersion": 2.1,
             "position": [
                 176,
                 192
@@ -186,6 +195,7 @@
         },
         {
             "parameters": {
+                "operation": "insert",
                 "tableId": "notifications",
                 "fieldsUi": {
                     "fieldValues": [
@@ -210,7 +220,7 @@
             },
             "name": "Log to Database",
             "type": "n8n-nodes-base.supabase",
-            "typeVersion": 2.2,
+            "typeVersion": 1,
             "position": [
                 176,
                 352
@@ -226,7 +236,7 @@
     ],
     "pinData": {},
     "connections": {
-        "Webhook (Slack Slash Command)": {
+        "Slack Trigger": {
             "main": [
                 [
                     {
