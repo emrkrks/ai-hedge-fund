@@ -14,7 +14,7 @@
             },
             "name": "Cron (16:00)",
             "type": "n8n-nodes-base.scheduleTrigger",
-            "typeVersion": 1,
+            "typeVersion": 2.2,
             "position": [
                 144,
                 32
@@ -214,7 +214,7 @@
             },
             "name": "Save to DB",
             "type": "n8n-nodes-base.supabase",
-            "typeVersion": 1,
+            "typeVersion": 2.2,
             "position": [
                 1952,
                 32
@@ -231,7 +231,7 @@
             "parameters": {},
             "name": "Next",
             "type": "n8n-nodes-base.noOp",
-            "typeVersion": 1,
+            "typeVersion": 2.2,
             "position": [
                 2144,
                 32
@@ -253,25 +253,22 @@
         },
         {
             "parameters": {
-                "chatId": "-4820408060",
+                "channel": "#portfolio-alerts",
                 "text": "={{ $json.summary_text }}",
-                "additionalFields": {
-                    "parse_mode": "Markdown"
-                }
+                "otherOptions": {}
             },
-            "name": "Send Telegram",
-            "type": "n8n-nodes-base.telegram",
-            "typeVersion": 1,
+            "name": "Send Slack",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2.2,
             "position": [
                 1344,
                 240
             ],
             "id": "73b1b05c-f6b4-43dd-aad6-d7a0ba868bc8",
-            "webhookId": "129cbdb2-f5e1-40b5-9222-295f97a74219",
             "credentials": {
-                "telegramApi": {
-                    "id": "3ocfCvvjIk4mgxda",
-                    "name": "Telegram account"
+                "slackApi": {
+                    "id": "SLACK_CREDENTIAL_ID",
+                    "name": "Slack account"
                 }
             }
         },
@@ -309,7 +306,7 @@
             },
             "name": "Save Summary",
             "type": "n8n-nodes-base.supabase",
-            "typeVersion": 1,
+            "typeVersion": 2.2,
             "position": [
                 1552,
                 240
@@ -475,7 +472,7 @@
             "main": [
                 [
                     {
-                        "node": "Send Telegram",
+                        "node": "Send Slack",
                         "type": "main",
                         "index": 0
                     },

@@ -14,7 +14,7 @@
             },
             "name": "Cron Trigger (Weekdays 08:30)",
             "type": "n8n-nodes-base.scheduleTrigger",
-            "typeVersion": 1,
+            "typeVersion": 2.2,
             "position": [
                 -112,
                 -80
@@ -85,7 +85,7 @@
             },
             "name": "Upsert to Supabase Watchlist",
             "type": "n8n-nodes-base.supabase",
-            "typeVersion": 1,
+            "typeVersion": 2.2,
             "position": [
                 496,
                 -80
@@ -100,15 +100,15 @@
         },
         {
             "parameters": {
-                "chatId": "-4820408060",
+                "channel": "#portfolio-alerts",
                 "text": "=✅ *Watchlist Senkronize Edildi!*\n\n📊 Toplam ticker güncellendi.\n🕐 {{ $now.format('dd/MM/yyyy HH:mm') }}",
                 "additionalFields": {
-                    "parse_mode": "Markdown"
+                    "as_user": true
                 }
             },
-            "name": "Notify Telegram (Success)",
-            "type": "n8n-nodes-base.telegram",
-            "typeVersion": 1,
+            "name": "Notify Slack (Success)",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2.2,
             "position": [
                 688,
                 -80
@@ -116,9 +116,9 @@
             "id": "e02805a5-5688-40a3-b72c-fa081044ca44",
             "webhookId": "67652fcc-b2ec-4171-8070-4b576f818f3f",
             "credentials": {
-                "telegramApi": {
+                "slackApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Telegram account"
+                    "name": "Slack account"
                 }
             }
         }
@@ -162,7 +162,7 @@
             "main": [
                 [
                     {
-                        "node": "Notify Telegram (Success)",
+                        "node": "Notify Slack (Success)",
                         "type": "main",
                         "index": 0
                     }

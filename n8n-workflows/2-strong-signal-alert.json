@@ -8,9 +8,9 @@
                 ],
                 "additionalFields": {}
             },
-            "name": "Telegram Trigger",
-            "type": "n8n-nodes-base.telegramTrigger",
-            "typeVersion": 1,
+            "name": "Slack Trigger",
+            "type": "n8n-nodes-base.slackTrigger",
+            "typeVersion": 2.2,
             "position": [
                 -1040,
                 304
@@ -18,9 +18,9 @@
             "webhookId": "telegram-signal-trigger",
             "id": "bf3ba2b6-a533-4367-b7fd-4a941e210aac",
             "credentials": {
-                "telegramApi": {
+                "slackApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Telegram account"
+                    "name": "Slack account"
                 }
             }
         },
@@ -72,15 +72,15 @@
         },
         {
             "parameters": {
-                "chatId": "={{ $json.chatId }}",
+                "channel": "={{ $json.chatId }}",
                 "text": "={{ $json.errorMessage }}",
                 "additionalFields": {
-                    "parse_mode": "Markdown"
+                    "as_user": true
                 }
             },
             "name": "Send Error Message",
-            "type": "n8n-nodes-base.telegram",
-            "typeVersion": 1,
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2.2,
             "position": [
                 -432,
                 448
@@ -88,23 +88,23 @@
             "id": "4dd751c5-ec17-40f3-9577-869545b7e521",
             "webhookId": "9b2a83c7-50b8-4d80-8980-45d1ae60d3a6",
             "credentials": {
-                "telegramApi": {
+                "slackApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Telegram account"
+                    "name": "Slack account"
                 }
             }
         },
         {
             "parameters": {
-                "chatId": "={{ $json.chatId }}",
+                "channel": "={{ $json.chatId }}",
                 "text": "=⏳ *{{ $json.ticker }}* analiz ediliyor...\n\n17 AI yatırımcı agent çalıştırılıyor, bu 30-60 saniye sürebilir.",
                 "additionalFields": {
-                    "parse_mode": "Markdown"
+                    "as_user": true
                 }
             },
             "name": "Send Processing Message",
-            "type": "n8n-nodes-base.telegram",
-            "typeVersion": 1,
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2.2,
             "position": [
                 -432,
                 192
@@ -112,9 +112,9 @@
             "id": "f4a6967f-d2f1-4624-a9aa-936381da3fe4",
             "webhookId": "8cd3e6d2-d424-4d5c-b58e-0cab594cfc54",
             "credentials": {
-                "telegramApi": {
+                "slackApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Telegram account"
+                    "name": "Slack account"
                 }
             }
         },
@@ -174,15 +174,15 @@
         },
         {
             "parameters": {
-                "chatId": "={{ $json.chatId }}",
+                "channel": "={{ $json.chatId }}",
                 "text": "={{ $json.message }}",
                 "additionalFields": {
-                    "parse_mode": "Markdown"
+                    "as_user": true
                 }
             },
             "name": "Send Result",
-            "type": "n8n-nodes-base.telegram",
-            "typeVersion": 1,
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2.2,
             "position": [
                 176,
                 192
@@ -190,9 +190,9 @@
             "id": "449f61bb-f0b4-4bc2-a2d8-e03e4f14cf15",
             "webhookId": "0299fe5b-835f-436f-855f-36917c66e994",
             "credentials": {
-                "telegramApi": {
+                "slackApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Telegram account"
+                    "name": "Slack account"
                 }
             }
         },
@@ -222,7 +222,7 @@
             },
             "name": "Log to Database",
             "type": "n8n-nodes-base.supabase",
-            "typeVersion": 1,
+            "typeVersion": 2.2,
             "position": [
                 176,
                 352
@@ -238,7 +238,7 @@
     ],
     "pinData": {},
     "connections": {
-        "Telegram Trigger": {
+        "Slack Trigger": {
             "main": [
                 [
                     {
