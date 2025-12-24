@@ -60,48 +60,84 @@ export function createAgentHandler(agentKey: string) {
             // 3. RUN FORMULA-BASED ANALYSIS (like original Python)
             const formulaAnalysis = runFormulaAnalysis(agentKey, data);
 
-            // Use formula-calculated signal and confidence
-            let signal = formulaAnalysis.signal;
-            let confidence = formulaAnalysis.confidence;
+            // Formula-calculated signal and confidence
+            const formulaSignal = formulaAnalysis.signal;
+            const formulaConfidence = formulaAnalysis.confidence;
 
-            // 4. Get LLM reasoning (LLM only writes the narrative, not decides signal)
+            // 4. Get prompts for LLM calls
             const prompt = getAgentPrompt(agentKey);
-            const systemPrompt = prompt.system + `\n\nIMPORTANT: Based on the analysis, the calculated signal is ${signal} with ${confidence}% confidence. Your job is to explain WHY this is the signal, not to change it.`;
+            const systemPrompt = prompt.system;
             const userPrompt = prompt.user(ticker, {
                 ...analysisContext,
-                calculated_signal: signal,
-                calculated_confidence: confidence,
+                formula_signal: formulaSignal,
+                formula_confidence: formulaConfidence,
                 analysis_details: formulaAnalysis.analysis_summary,
             });
 
-            let reasoning: string;
-            try {
-                const llmResponse = await callLLM({
-                    provider: llm_provider as LLMProvider,
-                    systemPrompt,
-                    userPrompt,
-                });
-                reasoning = llmResponse.reasoning;
-            } catch (llmError) {
-                // If LLM fails, use analysis summary as reasoning
-                console.error(`LLM failed for ${agentKey}, using formula summary:`, llmError);
-                reasoning = buildReasoningFromAnalysis(agentKey, formulaAnalysis);
+            // 5. Call ALL 4 LLMs in parallel (like consensus mode but show all results)
+            const allProviders: LLMProvider[] = ["azure", "gemini", "zai", "groq"];
+            const llmPromises = allProviders.map(async (provider) => {
+                try {
+                    const response = await callLLM({
+                        provider,
+                        systemPrompt,
+                        userPrompt,
+                    });
+                    return {
+                        provider,
+                        signal: response.signal,
+                        confidence: response.confidence,
+                        reasoning: response.reasoning,
+                        error: null,
+                    };
+                } catch (error) {
+                    const errorMsg = error instanceof Error ? error.message : String(error);
+                    return {
+                        provider,
+                        signal: "NEUTRAL" as const,
+                        confidence: 0,
+                        reasoning: `Error: ${errorMsg}`,
+                        error: errorMsg,
+                    };
+                }
+            });
+
+            const llmResults = await Promise.all(llmPromises);
+
+            // Build LLM results object
+            const llmResultsMap: Record<string, { signal: string; confidence: number; reasoning: string }> = {};
+            for (const result of llmResults) {
+                llmResultsMap[result.provider] = {
+                    signal: result.signal,
+                    confidence: result.confidence,
+                    reasoning: result.reasoning,
+                };
             }
 
-            // 5. Build the result
+            // Use formula signal/confidence as primary, with LLM reasoning from preferred provider
+            const preferredProvider = llm_provider as LLMProvider;
+            const preferredLLMResult = llmResultsMap[preferredProvider] || llmResultsMap["gemini"];
+            const reasoning = preferredLLMResult?.reasoning || buildReasoningFromAnalysis(agentKey, formulaAnalysis);
+
+            // 6. Build the result with BOTH formula and LLM results
             const result: AnalysisResult = {
                 ticker,
                 agent: agentKey,
                 agent_display_name: AGENT_CONFIG[agentKey].display_name,
-                signal,
-                confidence,
+                signal: formulaSignal,
+                confidence: formulaConfidence,
                 reasoning,
                 timestamp: new Date().toISOString(),
                 analysis_data: {
                     ...analysisContext,
-                    formula_analysis: formulaAnalysis.analysis_summary,
-                    total_score: formulaAnalysis.total_score,
-                    max_score: formulaAnalysis.max_score,
+                    formula_analysis: {
+                        signal: formulaSignal,
+                        confidence: formulaConfidence,
+                        details: formulaAnalysis.analysis_summary,
+                        total_score: formulaAnalysis.total_score,
+                        max_score: formulaAnalysis.max_score,
+                    },
+                    llm_results: llmResultsMap,
                 },
             };
 
