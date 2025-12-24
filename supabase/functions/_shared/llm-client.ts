@@ -198,7 +198,7 @@ async function callAzureOpenAI(
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt },
             ],
-            temperature,
+            // Note: GPT-5.2 doesn't support custom temperature, using default
             max_completion_tokens: maxTokens,
             response_format: { type: "json_object" },
         }),
