@@ -14,7 +14,7 @@
             },
             "name": "Cron Trigger (Sunday 18:00)",
             "type": "n8n-nodes-base.scheduleTrigger",
-            "typeVersion": 2.2,
+            "typeVersion": 1,
             "position": [
                 -800,
                 80
@@ -31,7 +31,7 @@
             },
             "name": "Get Weekly Analyses",
             "type": "n8n-nodes-base.supabase",
-            "typeVersion": 2.2,
+            "typeVersion": 1,
             "position": [
                 -592,
                 80
@@ -59,15 +59,15 @@
         },
         {
             "parameters": {
-                "channel": "#portfolio-alerts",
+                "chatId": "-4820408060",
                 "text": "={{ $json.formatted_message }}",
                 "additionalFields": {
-                    "as_user": true
+                    "parse_mode": "Markdown"
                 }
             },
-            "name": "Send to Slack",
-            "type": "n8n-nodes-base.slack",
-            "typeVersion": 2.2,
+            "name": "Send to Telegram",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
             "position": [
                 -192,
                 -32
@@ -75,9 +75,9 @@
             "id": "671779be-acc3-4efd-9cc0-93fade8c5ad0",
             "webhookId": "897bab1e-615e-4b07-abb3-19fe6899083d",
             "credentials": {
-                "slackApi": {
+                "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Slack account"
+                    "name": "Telegram account"
                 }
             }
         },
@@ -107,7 +107,7 @@
             },
             "name": "Save Summary",
             "type": "n8n-nodes-base.supabase",
-            "typeVersion": 2.2,
+            "typeVersion": 1,
             "position": [
                 -192,
                 176
@@ -164,7 +164,7 @@
             "main": [
                 [
                     {
-                        "node": "Send to Slack",
+                        "node": "Send to Telegram",
                         "type": "main",
                         "index": 0
                     },

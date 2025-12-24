@@ -1,35 +1,32 @@
 {
-    "name": "AI Hedge Fund - Strong Signal Alert (Slack Bot)",
+    "name": "AI Hedge Fund - Strong Signal Alert (Telegram Bot)",
     "nodes": [
         {
             "parameters": {
-                "trigger": "onMessage",
-                "channelId": {
-                    "__rl": true,
-                    "mode": "list",
-                    "value": ""
-                },
-                "options": {}
+                "updates": [
+                    "message"
+                ],
+                "additionalFields": {}
             },
-            "name": "Slack Trigger",
-            "type": "n8n-nodes-base.slackTrigger",
+            "name": "Telegram Trigger",
+            "type": "n8n-nodes-base.telegramTrigger",
             "typeVersion": 1,
             "position": [
                 -1040,
                 304
             ],
-            "webhookId": "slack-trigger-analyze",
+            "webhookId": "telegram-signal-trigger",
             "id": "bf3ba2b6-a533-4367-b7fd-4a941e210aac",
             "credentials": {
-                "slackApi": {
-                    "id": "SLACK_CREDENTIAL_ID",
-                    "name": "Slack account"
+                "telegramApi": {
+                    "id": "3ocfCvvjIk4mgxda",
+                    "name": "Telegram account"
                 }
             }
         },
         {
             "parameters": {
-                "jsCode": "// Parse Slack Trigger message\n// Slack Trigger sends: text, channel, user, ts etc.\nconst text = $json.text || '';\nconst channelId = $json.channel || '';\nconst userId = $json.user || '';\nconst userName = $json.user_name || 'User';\n\n// Check if message starts with /analyze or is just a ticker\nconst analyzeMatch = text.match(/^\\/analyze\\s+([A-Za-z]+)/i);\nconst tickerMatch = text.match(/^([A-Z]{1,5})$/i);\n\nlet ticker = null;\nlet isValidCommand = false;\n\nif (analyzeMatch) {\n  ticker = analyzeMatch[1].toUpperCase();\n  isValidCommand = true;\n} else if (tickerMatch) {\n  ticker = tickerMatch[1].toUpperCase();\n  isValidCommand = true;\n}\n\nif (!isValidCommand || !ticker) {\n  return [{\n    json: {\n      isValid: false,\n      channelId: channelId,\n      errorMessage: `Merhaba! 👋\\n\\nKullanım: /analyze AAPL veya sadece AAPL yazın\\n\\nÖrnek: /analyze TSLA`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    isValid: true,\n    ticker: ticker,\n    channelId: channelId,\n    userId: userId,\n    userName: userName\n  }\n}];"
+                "jsCode": "// Parse Telegram message to extract ticker\nconst message = $json.message?.text || '';\nconst chatId = $json.message?.chat?.id;\nconst firstName = $json.message?.from?.first_name || 'User';\n\n// Check if it's an analyze command\nconst analyzeMatch = message.match(/^\\/analyze\\s+([A-Za-z]+)/i);\nconst tickerMatch = message.match(/^([A-Za-z]{1,5})$/i);\n\nlet ticker = null;\nlet isValidCommand = false;\n\nif (analyzeMatch) {\n  ticker = analyzeMatch[1].toUpperCase();\n  isValidCommand = true;\n} else if (tickerMatch) {\n  ticker = tickerMatch[1].toUpperCase();\n  isValidCommand = true;\n}\n\nif (!isValidCommand || !ticker) {\n  return [{\n    json: {\n      isValid: false,\n      chatId: chatId,\n      errorMessage: `Merhaba ${firstName}! 👋\\n\\nKullanım:\\n• /analyze AAPL\\n• veya sadece: NVDA\\n\\nÖrnek: /analyze TSLA`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    isValid: true,\n    ticker: ticker,\n    chatId: chatId,\n    firstName: firstName\n  }\n}];"
             },
             "name": "Parse Command",
             "type": "n8n-nodes-base.code",
@@ -75,13 +72,15 @@
         },
         {
             "parameters": {
-                "channel": "={{ $json.channelId }}",
+                "chatId": "={{ $json.chatId }}",
                 "text": "={{ $json.errorMessage }}",
-                "otherOptions": {}
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
             },
             "name": "Send Error Message",
-            "type": "n8n-nodes-base.slack",
-            "typeVersion": 2.1,
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
             "position": [
                 -432,
                 448
@@ -89,21 +88,23 @@
             "id": "4dd751c5-ec17-40f3-9577-869545b7e521",
             "webhookId": "9b2a83c7-50b8-4d80-8980-45d1ae60d3a6",
             "credentials": {
-                "slackApi": {
+                "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Slack account"
+                    "name": "Telegram account"
                 }
             }
         },
         {
             "parameters": {
-                "channel": "={{ $json.channelId }}",
+                "chatId": "={{ $json.chatId }}",
                 "text": "=⏳ *{{ $json.ticker }}* analiz ediliyor...\n\n17 AI yatırımcı agent çalıştırılıyor, bu 30-60 saniye sürebilir.",
-                "otherOptions": {}
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
             },
             "name": "Send Processing Message",
-            "type": "n8n-nodes-base.slack",
-            "typeVersion": 2.1,
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
             "position": [
                 -432,
                 192
@@ -111,9 +112,9 @@
             "id": "f4a6967f-d2f1-4624-a9aa-936381da3fe4",
             "webhookId": "8cd3e6d2-d424-4d5c-b58e-0cab594cfc54",
             "credentials": {
-                "slackApi": {
+                "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Slack account"
+                    "name": "Telegram account"
                 }
             }
         },
@@ -160,7 +161,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// Handle array response and format for Slack\nlet data = $json;\n\n// If response is an array, get first item\nif (Array.isArray(data)) {\n  data = data[0];\n}\n\nconst channelId = $node['Parse Command'].json.channelId;\nconst ticker = data.ticker;\n\n// Calculate Formula and LLM averages\nlet formulaTotal = 0;\nlet llmTotal = 0;\nlet llmCount = 0;\nlet formulaCount = 0;\n\n(data.agent_results || []).forEach(agent => {\n  formulaTotal += agent.confidence || 0;\n  formulaCount++;\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  Object.entries(llmResults).forEach(([provider, result]) => {\n    if (result.confidence > 0 && !result.reasoning?.includes('Error')) {\n      llmTotal += result.confidence;\n      llmCount++;\n    }\n  });\n});\n\nconst formulaAvg = formulaCount > 0 ? Math.round(formulaTotal / formulaCount) : 0;\nconst llmAvg = llmCount > 0 ? Math.round(llmTotal / llmCount) : 0;\nconst combinedAvg = llmCount > 0 ? Math.round((formulaAvg + llmAvg) / 2) : formulaAvg;\n\nconst signalEmoji = data.aggregated_signal === 'BULLISH' ? ':large_green_circle:' : data.aggregated_signal === 'BEARISH' ? ':red_circle:' : ':white_circle:';\n\n// Agent breakdown with formula + LLM results\nconst agentLines = (data.agent_results || []).map(agent => {\n  const formulaEmoji = agent.signal === 'BULLISH' ? ':large_green_circle:' : agent.signal === 'BEARISH' ? ':red_circle:' : ':white_circle:';\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  let llmLine = '';\n  \n  if (Object.keys(llmResults).length > 0) {\n    const llmParts = [];\n    if (llmResults.gemini && !llmResults.gemini.reasoning?.includes('Error')) llmParts.push(`Gemini:${llmResults.gemini.signal}(${llmResults.gemini.confidence}%)`);\n    if (llmResults.azure && !llmResults.azure.reasoning?.includes('Error')) llmParts.push(`Azure:${llmResults.azure.signal}(${llmResults.azure.confidence}%)`);\n    if (llmResults.zai && !llmResults.zai.reasoning?.includes('Error')) llmParts.push(`Z.ai:${llmResults.zai.signal}(${llmResults.zai.confidence}%)`);\n    if (llmResults.groq && !llmResults.groq.reasoning?.includes('Error')) llmParts.push(`Groq:${llmResults.groq.signal}(${llmResults.groq.confidence}%)`);\n    llmLine = llmParts.length > 0 ? `\\n   LLMs: ${llmParts.join(' | ')}` : '';\n  }\n  \n  return `${formulaEmoji} ${agent.agent_display_name}: Formula ${agent.signal} (${agent.confidence}%)${llmLine}`;\n}).join('\\n');\n\n// Build message with combined confidence (Slack format)\nconst message = `${signalEmoji} *${ticker} - ${data.aggregated_signal}*\\n\\n:bar_chart: *Özet:*\\n• Sinyal: ${data.aggregated_signal}\\n• :dart: Kombine Güven: ${combinedAvg}%\\n• :abacus: Formül Güven: ${formulaAvg}%\\n• :robot_face: LLM Güven: ${llmAvg > 0 ? llmAvg + '%' : 'N/A'}\\n• :large_green_circle: Bullish: ${data.bullish_count}\\n• :red_circle: Bearish: ${data.bearish_count}\\n• :white_circle: Neutral: ${data.neutral_count}\\n\\n:busts_in_silhouette: *Agent Detayları:*\\n${agentLines}\\n\\n:clock1: ${new Date().toLocaleString('tr-TR')}`;\n\nreturn [{\n  json: {\n    channelId: channelId,\n    message: message,\n    formula_confidence: formulaAvg,\n    llm_confidence: llmAvg,\n    combined_confidence: combinedAvg,\n    ...data\n  }\n}];"
+                "jsCode": "// Handle array response and format for Telegram\nlet data = $json;\n\n// If response is an array, get first item\nif (Array.isArray(data)) {\n  data = data[0];\n}\n\nconst chatId = $node['Parse Command'].json.chatId;\nconst ticker = data.ticker;\n\n// Calculate Formula and LLM averages\nlet formulaTotal = 0;\nlet llmTotal = 0;\nlet llmCount = 0;\nlet formulaCount = 0;\n\n(data.agent_results || []).forEach(agent => {\n  formulaTotal += agent.confidence || 0;\n  formulaCount++;\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  Object.entries(llmResults).forEach(([provider, result]) => {\n    if (result.confidence > 0 && !result.reasoning?.includes('Error')) {\n      llmTotal += result.confidence;\n      llmCount++;\n    }\n  });\n});\n\nconst formulaAvg = formulaCount > 0 ? Math.round(formulaTotal / formulaCount) : 0;\nconst llmAvg = llmCount > 0 ? Math.round(llmTotal / llmCount) : 0;\nconst combinedAvg = llmCount > 0 ? Math.round((formulaAvg + llmAvg) / 2) : formulaAvg;\n\nconst signalEmoji = data.aggregated_signal === 'BULLISH' ? '🟢' : data.aggregated_signal === 'BEARISH' ? '🔴' : '⚪️';\n\n// Agent breakdown with formula + LLM results\nconst agentLines = (data.agent_results || []).map(agent => {\n  const formulaEmoji = agent.signal === 'BULLISH' ? '🟢' : agent.signal === 'BEARISH' ? '🔴' : '⚪️';\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  let llmLine = '';\n  \n  if (Object.keys(llmResults).length > 0) {\n    const llmParts = [];\n    if (llmResults.gemini && !llmResults.gemini.reasoning?.includes('Error')) llmParts.push(`Gemini:${llmResults.gemini.signal}(${llmResults.gemini.confidence}%)`);\n    if (llmResults.azure && !llmResults.azure.reasoning?.includes('Error')) llmParts.push(`Azure:${llmResults.azure.signal}(${llmResults.azure.confidence}%)`);\n    if (llmResults.zai && !llmResults.zai.reasoning?.includes('Error')) llmParts.push(`Z.ai:${llmResults.zai.signal}(${llmResults.zai.confidence}%)`);\n    if (llmResults.groq && !llmResults.groq.reasoning?.includes('Error')) llmParts.push(`Groq:${llmResults.groq.signal}(${llmResults.groq.confidence}%)`);\n    llmLine = llmParts.length > 0 ? `\\n   LLMs: ${llmParts.join(' | ')}` : '';\n  }\n  \n  return `${formulaEmoji} ${agent.agent_display_name}: Formula ${agent.signal} (${agent.confidence}%)${llmLine}`;\n}).join('\\n');\n\n// Build message with combined confidence\nconst message = `\n${signalEmoji} *${ticker} - ${data.aggregated_signal}*\n\n📊 *Özet:*\n• Sinyal: ${data.aggregated_signal}\n• 🎯 Kombine Güven: ${combinedAvg}%\n• 🧮 Formül Güven: ${formulaAvg}%\n• 🤖 LLM Güven: ${llmAvg > 0 ? llmAvg + '%' : 'N/A'}\n• 🟢 Bullish: ${data.bullish_count}\n• 🔴 Bearish: ${data.bearish_count}\n• ⚪️ Neutral: ${data.neutral_count}\n\n👥 *Agent Detayları:*\n${agentLines}\n\n🕐 ${new Date().toLocaleString('tr-TR')}\n`;\n\nreturn [{\n  json: {\n    chatId: chatId,\n    message: message,\n    formula_confidence: formulaAvg,\n    llm_confidence: llmAvg,\n    combined_confidence: combinedAvg,\n    ...data\n  }\n}];"
             },
             "name": "Format Result",
             "type": "n8n-nodes-base.code",
@@ -173,13 +174,15 @@
         },
         {
             "parameters": {
-                "channel": "={{ $json.channelId }}",
+                "chatId": "={{ $json.chatId }}",
                 "text": "={{ $json.message }}",
-                "otherOptions": {}
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
             },
             "name": "Send Result",
-            "type": "n8n-nodes-base.slack",
-            "typeVersion": 2.1,
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
             "position": [
                 176,
                 192
@@ -187,9 +190,9 @@
             "id": "449f61bb-f0b4-4bc2-a2d8-e03e4f14cf15",
             "webhookId": "0299fe5b-835f-436f-855f-36917c66e994",
             "credentials": {
-                "slackApi": {
+                "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
-                    "name": "Slack account"
+                    "name": "Telegram account"
                 }
             }
         },
@@ -235,7 +238,7 @@
     ],
     "pinData": {},
     "connections": {
-        "Slack Trigger": {
+        "Telegram Trigger": {
             "main": [
                 [
                     {
