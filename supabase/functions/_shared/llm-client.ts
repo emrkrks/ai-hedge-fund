@@ -148,7 +148,7 @@ interface LLMCallOptions {
  * Call an LLM provider and return a structured signal response
  */
 export async function callLLM(options: LLMCallOptions): Promise<LLMSignalResponse> {
-    const { provider, systemPrompt, userPrompt, temperature = 0.3, maxTokens = 500 } = options;
+    const { provider, systemPrompt, userPrompt, temperature = 0.3, maxTokens = 800 } = options;
 
     switch (provider) {
         case "azure":
