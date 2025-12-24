@@ -336,7 +336,7 @@ async function callZai(
                 { role: "user", content: userPrompt },
             ],
             temperature,
-            max_tokens: maxTokens,
+            max_tokens: Math.max(maxTokens, 1200), // Z.ai needs more tokens to prevent truncation
         }),
     });
 
@@ -433,6 +433,50 @@ async function callGroq(
 }
 
 /**
+ * Attempt to fix truncated JSON responses
+ * Common when LLM response is cut off due to token limits
+ */
+function fixTruncatedJson(json: string): string {
+    // If it already parses, return as-is
+    try {
+        JSON.parse(json);
+        return json;
+    } catch {
+        // Continue with fix attempts
+    }
+
+    let fixed = json.trim();
+
+    // If string is cut mid-value, try to close it
+    // Count quotes to see if we have an unterminated string
+    const quoteCount = (fixed.match(/"/g) || []).length;
+    if (quoteCount % 2 !== 0) {
+        // Odd number of quotes = unterminated string
+        // Truncate at the last complete-ish point and close
+        fixed = fixed + '"';
+    }
+
+    // Count braces and brackets
+    const openBraces = (fixed.match(/\{/g) || []).length;
+    const closeBraces = (fixed.match(/\}/g) || []).length;
+    const openBrackets = (fixed.match(/\[/g) || []).length;
+    const closeBrackets = (fixed.match(/\]/g) || []).length;
+
+    // Close any unclosed brackets first, then braces
+    for (let i = 0; i < openBrackets - closeBrackets; i++) {
+        fixed += ']';
+    }
+    for (let i = 0; i < openBraces - closeBraces; i++) {
+        fixed += '}';
+    }
+
+    // Remove trailing comma if present before closing brace
+    fixed = fixed.replace(/,\s*\}/g, '}').replace(/,\s*\]/g, ']');
+
+    return fixed;
+}
+
+/**
  * Parse LLM response to extract signal, confidence, reasoning
  * Enhanced to handle various confidence formats and edge cases
  */
@@ -449,6 +493,9 @@ function parseSignalResponse(content: string, provider: string): LLMSignalRespon
         if (jsonMatch) {
             cleanContent = jsonMatch[0];
         }
+
+        // Try to fix truncated JSON
+        cleanContent = fixTruncatedJson(cleanContent);
 
         const parsed = JSON.parse(cleanContent);
 
