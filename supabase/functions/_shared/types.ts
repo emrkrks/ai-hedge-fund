@@ -93,7 +93,8 @@ export interface LLMSignalResponse {
     signal: "bullish" | "bearish" | "neutral" | "BULLISH" | "BEARISH" | "NEUTRAL";
     confidence: number;
     reasoning: string;
-    provider?: string; // Which LLM generated this response (for consensus mode)
+    provider?: string; // Which LLM provider (for consensus mode)
+    modelName?: string; // Actual model name from env vars (e.g., "gemini-2.0-flash", "gpt-5.2")
 }
 
 // Agent Configuration

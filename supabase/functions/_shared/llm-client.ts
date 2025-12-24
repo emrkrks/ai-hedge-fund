@@ -227,7 +227,7 @@ async function callAzureOpenAI(
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "{}";
 
-    return parseSignalResponse(content, "azure");
+    return parseSignalResponse(content, "azure", deploymentName);
 }
 
 /**
@@ -298,7 +298,7 @@ async function callGemini(
     const data = await response.json();
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
-    return parseSignalResponse(content, "gemini");
+    return parseSignalResponse(content, "gemini", modelName);
 }
 
 /**
@@ -363,7 +363,7 @@ async function callZai(
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "{}";
 
-    return parseSignalResponse(content, "zai");
+    return parseSignalResponse(content, "zai", modelName);
 }
 
 /**
@@ -429,7 +429,7 @@ async function callGroq(
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "{}";
 
-    return parseSignalResponse(content, "groq");
+    return parseSignalResponse(content, "groq", modelName);
 }
 
 /**
@@ -480,7 +480,7 @@ function fixTruncatedJson(json: string): string {
  * Parse LLM response to extract signal, confidence, reasoning
  * Enhanced to handle various confidence formats and edge cases
  */
-function parseSignalResponse(content: string, provider: string): LLMSignalResponse {
+function parseSignalResponse(content: string, provider: string, modelName: string): LLMSignalResponse {
     try {
         // Clean markdown code blocks if present
         let cleanContent = content
@@ -548,6 +548,7 @@ function parseSignalResponse(content: string, provider: string): LLMSignalRespon
             confidence,
             reasoning,
             provider,
+            modelName,
         };
     } catch (error) {
         console.error(`Failed to parse ${provider} LLM response:`, error, content);
@@ -570,6 +571,7 @@ function parseSignalResponse(content: string, provider: string): LLMSignalRespon
             confidence: fallbackConfidence,
             reasoning: `[Parse fallback] ${content.substring(0, 200)}...`,
             provider,
+            modelName,
         };
     }
 }
