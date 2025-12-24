@@ -10,8 +10,9 @@ import { AGENT_CONFIG, AnalysisResult } from "../_shared/types.ts";
 interface AggregateRequest {
     ticker: string;
     end_date?: string;
-    llm_provider?: "azure" | "gemini" | "zai";
+    llm_provider?: "azure" | "gemini" | "zai" | "groq";
     agents?: string[]; // Optional: specific agents to run
+    use_consensus?: boolean; // Enable multi-LLM consensus mode (4 LLMs)
 }
 
 interface AggregatedResult {
@@ -35,7 +36,7 @@ serve(async (req: Request) => {
 
     try {
         const request: AggregateRequest = await req.json();
-        const { ticker, end_date, llm_provider = "gemini", agents } = request;
+        const { ticker, end_date, llm_provider = "gemini", agents, use_consensus = false } = request;
 
         if (!ticker) {
             return new Response(
@@ -80,7 +81,7 @@ serve(async (req: Request) => {
                         "Content-Type": "application/json",
                         Authorization: req.headers.get("Authorization") || "",
                     },
-                    body: JSON.stringify({ ticker, end_date, llm_provider }),
+                    body: JSON.stringify({ ticker, end_date, llm_provider, use_consensus }),
                 });
 
                 if (response.ok) {

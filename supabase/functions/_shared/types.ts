@@ -93,6 +93,7 @@ export interface LLMSignalResponse {
     signal: "bullish" | "bearish" | "neutral" | "BULLISH" | "BEARISH" | "NEUTRAL";
     confidence: number;
     reasoning: string;
+    provider?: string; // Which LLM generated this response (for consensus mode)
 }
 
 // Agent Configuration

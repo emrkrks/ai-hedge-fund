@@ -1,14 +1,16 @@
 // Supabase Edge Functions - Generic Agent Handler
 // Reusable handler for all agent Edge Functions
+// Supports Multi-LLM Consensus Mode (4 LLMs: Azure, Gemini, Z.ai, Groq)
 
 import { corsHeaders, handleCors } from "./cors.ts";
-import { callLLM, LLMProvider } from "./llm-client.ts";
+import { callLLM, callWithConsensus, LLMProvider, ALL_PROVIDERS } from "./llm-client.ts";
 import { getAgentPrompt } from "./prompts.ts";
 import { getComprehensiveData } from "./financial-api.ts";
 import { AnalyzeRequest, AnalysisResult, AGENT_CONFIG } from "./types.ts";
 
 /**
  * Create a generic agent handler for Supabase Edge Functions
+ * Supports both single LLM and multi-LLM consensus modes
  */
 export function createAgentHandler(agentKey: string) {
     return async (req: Request): Promise<Response> => {
@@ -18,7 +20,12 @@ export function createAgentHandler(agentKey: string) {
 
         try {
             const request: AnalyzeRequest = await req.json();
-            const { ticker, end_date, llm_provider = "gemini" } = request;
+            const {
+                ticker,
+                end_date,
+                llm_provider = "gemini",
+                use_consensus = false,  // Enable multi-LLM consensus mode
+            } = request as AnalyzeRequest & { use_consensus?: boolean };
 
             if (!ticker) {
                 return new Response(
@@ -43,24 +50,63 @@ export function createAgentHandler(agentKey: string) {
 
             // 3. Get the agent's prompt
             const prompt = getAgentPrompt(agentKey);
+            const systemPrompt = prompt.system;
+            const userPrompt = prompt.user(ticker, analysisContext);
 
-            // 4. Call LLM with the prompt
-            const llmResponse = await callLLM({
-                provider: llm_provider as LLMProvider,
-                systemPrompt: prompt.system,
-                userPrompt: prompt.user(ticker, analysisContext),
-            });
+            let signal: "BULLISH" | "BEARISH" | "NEUTRAL";
+            let confidence: number;
+            let reasoning: string;
+            let llmDetails: Record<string, unknown> = {};
+
+            if (use_consensus) {
+                // 4a. CONSENSUS MODE: Call all 4 LLMs and aggregate results
+                console.log(`[${agentKey}] Using consensus mode with 4 LLMs...`);
+
+                const consensusResult = await callWithConsensus(systemPrompt, userPrompt, ALL_PROVIDERS);
+
+                signal = consensusResult.consensus_signal;
+                confidence = consensusResult.consensus_confidence;
+                reasoning = consensusResult.consensus_reasoning;
+                llmDetails = {
+                    mode: "consensus",
+                    providers_used: ALL_PROVIDERS,
+                    vote_breakdown: consensusResult.vote_breakdown,
+                    individual_results: consensusResult.individual_results.map(r => ({
+                        provider: r.provider,
+                        signal: r.signal,
+                        confidence: r.confidence,
+                    })),
+                };
+            } else {
+                // 4b. SINGLE LLM MODE: Use specified provider
+                const llmResponse = await callLLM({
+                    provider: llm_provider as LLMProvider,
+                    systemPrompt,
+                    userPrompt,
+                });
+
+                signal = llmResponse.signal.toUpperCase() as "BULLISH" | "BEARISH" | "NEUTRAL";
+                confidence = llmResponse.confidence;
+                reasoning = llmResponse.reasoning;
+                llmDetails = {
+                    mode: "single",
+                    provider: llm_provider,
+                };
+            }
 
             // 5. Build the result
             const result: AnalysisResult = {
                 ticker,
                 agent: agentKey,
                 agent_display_name: AGENT_CONFIG[agentKey].display_name,
-                signal: llmResponse.signal.toUpperCase() as "BULLISH" | "BEARISH" | "NEUTRAL",
-                confidence: llmResponse.confidence,
-                reasoning: llmResponse.reasoning,
+                signal,
+                confidence,
+                reasoning,
                 timestamp: new Date().toISOString(),
-                analysis_data: analysisContext,
+                analysis_data: {
+                    ...analysisContext,
+                    llm_details: llmDetails,
+                },
             };
 
             return new Response(

@@ -42,11 +42,12 @@ functions/
 # FinancialDatasets.ai API (Orijinal Python projesindekiyle aynı)
 supabase secrets set FINANCIAL_DATASETS_API_KEY=your_financial_datasets_key
 
-# LLM Providers
+# LLM Providers (4 adet - Consensus Mode için hepsi gerekli)
 supabase secrets set GEMINI_API_KEY=your_gemini_key
 supabase secrets set AZURE_OPENAI_API_KEY=your_azure_key
 supabase secrets set AZURE_OPENAI_ENDPOINT=https://xxx.openai.azure.com
 supabase secrets set ZAI_API_KEY=your_zai_key
+supabase secrets set GROQ_API_KEY=your_groq_key
 
 # Opsiyonel (Macro data için)
 supabase secrets set FRED_API_KEY=your_fred_key
@@ -107,13 +108,32 @@ curl -X POST https://YOUR-PROJECT.supabase.co/functions/v1/analyze-aggregate \
 }
 ```
 
-## 🔑 LLM Providers
+## 🔑 LLM Providers (Multi-LLM Consensus Mode)
 
-| Provider | Environment Variable |
-|----------|---------------------|
-| Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` |
-| Google Gemini | `GEMINI_API_KEY` |
-| Z.ai (GLM) | `ZAI_API_KEY` |
+| Provider | Environment Variable | Model |
+|----------|---------------------|-------|
+| Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | GPT-4o-mini |
+| Google Gemini | `GEMINI_API_KEY` | gemini-2.0-flash-lite |
+| Z.ai (GLM) | `ZAI_API_KEY` | glm-4v-flash |
+| Groq | `GROQ_API_KEY` | llama-3.3-70b-versatile |
+
+### 🗳️ Consensus Mode
+
+Her agent 4 LLM'den aynı anda yanıt alıp çoğunluk oylamasıyla karar verir:
+
+```json
+{
+  "ticker": "AAPL",
+  "use_consensus": true,
+  "agents": ["warren_buffett", "peter_lynch"]
+}
+```
+
+Sonuç:
+- 4 LLM paralel çağrılır (Azure, Gemini, Z.ai, Groq)
+- Her biri bağımsız analiz yapar
+- Çoğunluk oyu final sinyali belirler
+- Güven skoru konsensüs gücüne göre ayarlanır
 
 ## ⚙️ Local Development
 
@@ -130,3 +150,4 @@ supabase functions serve analyze-warren-buffett --env-file .env.local
 - Edge Functions 60 saniye timeout
 - Deno runtime kullanır
 - Her agent bireysel çağrılabilir veya aggregate ile toplu çağrılabilir
+- Consensus mode daha yavaş ama daha güvenilir sonuç verir
