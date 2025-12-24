@@ -275,34 +275,95 @@ async function callGroq(
 
 /**
  * Parse LLM response to extract signal, confidence, reasoning
+ * Enhanced to handle various confidence formats and edge cases
  */
 function parseSignalResponse(content: string, provider: string): LLMSignalResponse {
     try {
         // Clean markdown code blocks if present
-        const cleanContent = content
+        let cleanContent = content
             .replace(/```json\n?/g, "")
             .replace(/```\n?/g, "")
             .trim();
 
+        // Try to extract JSON if it's embedded in text
+        const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            cleanContent = jsonMatch[0];
+        }
+
         const parsed = JSON.parse(cleanContent);
 
         // Normalize signal to uppercase
-        const signal = (parsed.signal || "neutral").toUpperCase();
+        const rawSignal = String(parsed.signal || "neutral").toUpperCase().trim();
+        let signal: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+        if (rawSignal.includes("BULLISH") || rawSignal.includes("BUY")) {
+            signal = "BULLISH";
+        } else if (rawSignal.includes("BEARISH") || rawSignal.includes("SELL")) {
+            signal = "BEARISH";
+        }
+
+        // Extract confidence - handle multiple formats
+        let confidence = 0;
+        const rawConfidence = parsed.confidence;
+
+        if (typeof rawConfidence === "number") {
+            confidence = rawConfidence;
+        } else if (typeof rawConfidence === "string") {
+            // Handle percentage strings like "75%" or "75 percent"
+            const numMatch = rawConfidence.match(/(\d+(?:\.\d+)?)/);
+            if (numMatch) {
+                confidence = parseFloat(numMatch[1]);
+            } else {
+                // Handle text descriptions
+                const confLower = rawConfidence.toLowerCase();
+                if (confLower.includes("very high") || confLower.includes("extremely")) confidence = 90;
+                else if (confLower.includes("high")) confidence = 75;
+                else if (confLower.includes("moderate") || confLower.includes("medium")) confidence = 55;
+                else if (confLower.includes("low")) confidence = 35;
+                else if (confLower.includes("very low")) confidence = 15;
+            }
+        }
+
+        // If still 0, infer from signal (LLM gave a signal so must have SOME confidence)
+        if (confidence === 0 && signal !== "NEUTRAL") {
+            confidence = 50; // Default to moderate confidence if LLM gave a directional signal
+        } else if (confidence === 0 && parsed.reasoning && parsed.reasoning.length > 50) {
+            confidence = 40; // If there's substantial reasoning, give some baseline confidence
+        }
+
+        // Normalize to 0-100 range
+        confidence = Math.min(100, Math.max(0, Math.round(confidence)));
+
+        // Extract reasoning
+        const reasoning = String(parsed.reasoning || parsed.explanation || parsed.rationale || "Analysis completed").substring(0, 1000);
 
         return {
-            signal: signal as "BULLISH" | "BEARISH" | "NEUTRAL",
-            confidence: Math.min(100, Math.max(0, Number(parsed.confidence) || 0)),
-            reasoning: String(parsed.reasoning || "No reasoning provided").substring(0, 1000),
-            provider: provider,
+            signal,
+            confidence,
+            reasoning,
+            provider,
         };
     } catch (error) {
         console.error(`Failed to parse ${provider} LLM response:`, error, content);
-        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Try to salvage something from the raw content
+        const contentLower = content.toLowerCase();
+        let fallbackSignal: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+        let fallbackConfidence = 30; // Low confidence for fallback
+
+        if (contentLower.includes("bullish") || contentLower.includes("buy")) {
+            fallbackSignal = "BULLISH";
+            fallbackConfidence = 40;
+        } else if (contentLower.includes("bearish") || contentLower.includes("sell")) {
+            fallbackSignal = "BEARISH";
+            fallbackConfidence = 40;
+        }
+
         return {
-            signal: "NEUTRAL",
-            confidence: 0,
-            reasoning: `Parse error (${provider}): ${errorMessage}`,
-            provider: provider,
+            signal: fallbackSignal,
+            confidence: fallbackConfidence,
+            reasoning: `[Parse fallback] ${content.substring(0, 200)}...`,
+            provider,
         };
     }
 }
