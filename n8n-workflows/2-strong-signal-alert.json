@@ -1,5 +1,5 @@
 {
-    "name": "AI Hedge Fund - Strong Signal Alert (Telegram Bot)",
+    "name": "AI Hedge Fund - Strong Signal Alert (Batched)",
     "nodes": [
         {
             "parameters": {
@@ -86,7 +86,6 @@
                 448
             ],
             "id": "4dd751c5-ec17-40f3-9577-869545b7e521",
-            "webhookId": "9b2a83c7-50b8-4d80-8980-45d1ae60d3a6",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
@@ -97,7 +96,7 @@
         {
             "parameters": {
                 "chatId": "={{ $json.chatId }}",
-                "text": "=⏳ *{{ $json.ticker }}* analiz ediliyor...\n\n17 AI yatırımcı agent çalıştırılıyor, bu 30-60 saniye sürebilir.",
+                "text": "=⏳ *{{ $json.ticker }}* analiz ediliyor...\n\n17 AI agent + 4 LLM çalıştırılıyor.\nBatch 1/4 başlatılıyor...",
                 "additionalFields": {
                     "parse_mode": "Markdown"
                 }
@@ -109,8 +108,7 @@
                 -432,
                 192
             ],
-            "id": "f4a6967f-d2f1-4624-a9aa-936381da3fe4",
-            "webhookId": "8cd3e6d2-d424-4d5c-b58e-0cab594cfc54",
+            "id": "b5d4c7e0-c8f2-4b6a-8c5e-3a2f9d8e7b6a",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
@@ -121,7 +119,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "=https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
+                "url": "https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
                 "authentication": "genericCredentialType",
                 "genericAuthType": "httpHeaderAuth",
                 "sendHeaders": true,
@@ -139,19 +137,19 @@
                 },
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"ticker\": \"{{ $node['Parse Command'].json.ticker }}\",\n  \"llm_provider\": \"gemini\",\n  \"agents\": [\n    \"warren_buffett\",\n    \"peter_lynch\",\n    \"ben_graham\",\n    \"charlie_munger\",\n    \"michael_burry\",\n    \"cathie_wood\",\n    \"bill_ackman\",\n    \"stanley_druckenmiller\",\n    \"phil_fisher\",\n    \"mohnish_pabrai\",\n    \"rakesh_jhunjhunwala\",\n    \"aswath_damodaran\",\n    \"technical_analyst\",\n    \"fundamentals_analyst\",\n    \"growth_analyst\",\n    \"news_sentiment_analyst\",\n    \"sentiment_analyst\"\n  ]\n}",
+                "jsonBody": "={\n  \"ticker\": \"{{ $node['Parse Command'].json.ticker }}\",\n  \"llm_provider\": \"gemini\",\n  \"agents\": [\"warren_buffett\", \"peter_lynch\", \"ben_graham\", \"charlie_munger\", \"michael_burry\"]\n}",
                 "options": {
                     "timeout": 120000
                 }
             },
-            "name": "Call Supabase Aggregate",
+            "name": "Batch 1 - Value Investors",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -240,
+                -176,
                 192
             ],
-            "id": "6f7f5630-b1ed-450b-97d9-da0704745417",
+            "id": "batch1-value-investors",
             "credentials": {
                 "httpHeaderAuth": {
                     "id": "4su2l4bSjSuWKNs2",
@@ -161,16 +159,139 @@
         },
         {
             "parameters": {
-                "jsCode": "// Handle array response and format for Telegram\nlet data = $json;\n\n// If response is an array, get first item\nif (Array.isArray(data)) {\n  data = data[0];\n}\n\nconst chatId = $node['Parse Command'].json.chatId;\nconst ticker = data.ticker;\n\n// Calculate Formula and LLM averages\nlet formulaTotal = 0;\nlet llmTotal = 0;\nlet llmCount = 0;\nlet formulaCount = 0;\n\n(data.agent_results || []).forEach(agent => {\n  formulaTotal += agent.confidence || 0;\n  formulaCount++;\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  Object.entries(llmResults).forEach(([provider, result]) => {\n    if (result.confidence > 0 && !result.reasoning?.includes('Error')) {\n      llmTotal += result.confidence;\n      llmCount++;\n    }\n  });\n});\n\nconst formulaAvg = formulaCount > 0 ? Math.round(formulaTotal / formulaCount) : 0;\nconst llmAvg = llmCount > 0 ? Math.round(llmTotal / llmCount) : 0;\nconst combinedAvg = llmCount > 0 ? Math.round((formulaAvg + llmAvg) / 2) : formulaAvg;\n\nconst signalEmoji = data.aggregated_signal === 'BULLISH' ? '🟢' : data.aggregated_signal === 'BEARISH' ? '🔴' : '⚪️';\n\n// Agent breakdown with formula + LLM results\nconst agentLines = (data.agent_results || []).map(agent => {\n  const formulaEmoji = agent.signal === 'BULLISH' ? '🟢' : agent.signal === 'BEARISH' ? '🔴' : '⚪️';\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  let llmLine = '';\n  \n  if (Object.keys(llmResults).length > 0) {\n    const llmParts = [];\n    // Use modelName from response (dynamic, from secrets)\n    Object.entries(llmResults).forEach(([provider, result]) => {\n      if (result && result.confidence > 0 && !result.reasoning?.includes('Error')) {\n        const displayName = result.modelName || provider;\n        llmParts.push(`${displayName}:${result.signal}(${result.confidence}%)`);\n      }\n    });\n    llmLine = llmParts.length > 0 ? `\\n   LLMs: ${llmParts.join(' | ')}` : '';\n  }\n  \n  return `${formulaEmoji} ${agent.agent_display_name}: Formula ${agent.signal} (${agent.confidence}%)${llmLine}`;\n}).join('\\n');\n\n// Build message with combined confidence\nconst message = `\n${signalEmoji} *${ticker} - ${data.aggregated_signal}*\n\n📊 *Özet:*\n• Sinyal: ${data.aggregated_signal}\n• 🎯 Kombine Güven: ${combinedAvg}%\n• 🧮 Formül Güven: ${formulaAvg}%\n• 🤖 LLM Güven: ${llmAvg > 0 ? llmAvg + '%' : 'N/A'}\n• 🟢 Bullish: ${data.bullish_count}\n• 🔴 Bearish: ${data.bearish_count}\n• ⚪️ Neutral: ${data.neutral_count}\n\n👥 *Agent Detayları:*\n${agentLines}\n\n🕐 ${new Date().toLocaleString('tr-TR')}\n`;\n\nreturn [{\n  json: {\n    chatId: chatId,\n    message: message,\n    formula_confidence: formulaAvg,\n    llm_confidence: llmAvg,\n    combined_confidence: combinedAvg,\n    ...data\n  }\n}];"
+                "method": "POST",
+                "url": "https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"ticker\": \"{{ $node['Parse Command'].json.ticker }}\",\n  \"llm_provider\": \"gemini\",\n  \"agents\": [\"cathie_wood\", \"bill_ackman\", \"stanley_druckenmiller\", \"phil_fisher\"]\n}",
+                "options": {
+                    "timeout": 120000
+                }
             },
-            "name": "Format Result",
+            "name": "Batch 2 - Growth & Activist",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                80,
+                192
+            ],
+            "id": "batch2-growth-activist",
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "4su2l4bSjSuWKNs2",
+                    "name": "Header Auth account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"ticker\": \"{{ $node['Parse Command'].json.ticker }}\",\n  \"llm_provider\": \"gemini\",\n  \"agents\": [\"mohnish_pabrai\", \"rakesh_jhunjhunwala\", \"aswath_damodaran\", \"technical_analyst\"]\n}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "name": "Batch 3 - Emerging & Technical",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                336,
+                192
+            ],
+            "id": "batch3-emerging-technical",
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "4su2l4bSjSuWKNs2",
+                    "name": "Header Auth account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://ukgirrzwgmaatrrkkgis.supabase.co/functions/v1/analyze-aggregate",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ2lycnp3Z21hYXRycmtrZ2lzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODcwMjEsImV4cCI6MjA4MjA2MzAyMX0.ACFUKgsqeuAcFshlfHwhiiAfaABbVqiQlkSMbp2zOdo"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"ticker\": \"{{ $node['Parse Command'].json.ticker }}\",\n  \"llm_provider\": \"gemini\",\n  \"agents\": [\"fundamentals_analyst\", \"growth_analyst\", \"news_sentiment_analyst\", \"sentiment_analyst\"]\n}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "name": "Batch 4 - Analysts",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                592,
+                192
+            ],
+            "id": "batch4-analysts",
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "4su2l4bSjSuWKNs2",
+                    "name": "Header Auth account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// Merge all batch results\nconst batch1 = $('Batch 1 - Value Investors').first().json;\nconst batch2 = $('Batch 2 - Growth & Activist').first().json;\nconst batch3 = $('Batch 3 - Emerging & Technical').first().json;\nconst batch4 = $('Batch 4 - Analysts').first().json;\n\nconst ticker = batch1.ticker;\nconst chatId = $node['Parse Command'].json.chatId;\n\n// Combine all agent results\nconst allResults = [\n  ...(batch1.agent_results || []),\n  ...(batch2.agent_results || []),\n  ...(batch3.agent_results || []),\n  ...(batch4.agent_results || [])\n];\n\n// Calculate aggregated signal\nlet bullish = 0, bearish = 0, neutral = 0;\nlet formulaTotal = 0, llmTotal = 0, llmCount = 0;\n\nallResults.forEach(agent => {\n  const sig = (agent.signal || '').toUpperCase();\n  if (sig === 'BULLISH') bullish++;\n  else if (sig === 'BEARISH') bearish++;\n  else neutral++;\n  \n  formulaTotal += agent.confidence || 0;\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  Object.values(llmResults).forEach(r => {\n    if (r && r.confidence > 0 && !r.reasoning?.includes('Error')) {\n      llmTotal += r.confidence;\n      llmCount++;\n    }\n  });\n});\n\nconst formulaAvg = allResults.length > 0 ? Math.round(formulaTotal / allResults.length) : 0;\nconst llmAvg = llmCount > 0 ? Math.round(llmTotal / llmCount) : 0;\nconst combinedAvg = llmCount > 0 ? Math.round((formulaAvg + llmAvg) / 2) : formulaAvg;\n\nlet aggregatedSignal = 'NEUTRAL';\nif (bullish > bearish && bullish > neutral) aggregatedSignal = 'BULLISH';\nelse if (bearish > bullish && bearish > neutral) aggregatedSignal = 'BEARISH';\n\nconst signalEmoji = aggregatedSignal === 'BULLISH' ? '🟢' : aggregatedSignal === 'BEARISH' ? '🔴' : '⚪️';\n\n// Agent breakdown with formula + LLM results\nconst agentLines = allResults.map(agent => {\n  const formulaEmoji = agent.signal === 'BULLISH' ? '🟢' : agent.signal === 'BEARISH' ? '🔴' : '⚪️';\n  \n  const llmResults = agent.analysis_data?.llm_results || {};\n  let llmLine = '';\n  \n  if (Object.keys(llmResults).length > 0) {\n    const llmParts = [];\n    Object.entries(llmResults).forEach(([provider, result]) => {\n      if (result && result.confidence > 0 && !result.reasoning?.includes('Error')) {\n        const displayName = result.modelName || provider;\n        llmParts.push(`${displayName}:${result.signal}(${result.confidence}%)`);\n      }\n    });\n    llmLine = llmParts.length > 0 ? `\\n   LLMs: ${llmParts.join(' | ')}` : '';\n  }\n  \n  return `${formulaEmoji} ${agent.agent_display_name}: Formula ${agent.signal} (${agent.confidence}%)${llmLine}`;\n}).join('\\n');\n\nconst message = `\n${signalEmoji} *${ticker} - ${aggregatedSignal}*\n\n📊 *Özet:*\n• Sinyal: ${aggregatedSignal}\n• 🎯 Kombine Güven: ${combinedAvg}%\n• 🧮 Formül Güven: ${formulaAvg}%\n• 🤖 LLM Güven: ${llmAvg > 0 ? llmAvg + '%' : 'N/A'}\n• 🟢 Bullish: ${bullish}\n• 🔴 Bearish: ${bearish}\n• ⚪️ Neutral: ${neutral}\n\n👥 *Agent Detayları:*\n${agentLines}\n\n🕐 ${new Date().toLocaleString('tr-TR')}\n`;\n\nreturn [{\n  json: {\n    chatId: chatId,\n    message: message,\n    ticker: ticker,\n    aggregated_signal: aggregatedSignal,\n    formula_confidence: formulaAvg,\n    llm_confidence: llmAvg,\n    combined_confidence: combinedAvg,\n    bullish_count: bullish,\n    bearish_count: bearish,\n    neutral_count: neutral,\n    agent_results: allResults\n  }\n}];"
+            },
+            "name": "Merge Results",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -32,
+                848,
                 192
             ],
-            "id": "c71c87c4-bc70-4ecc-96fb-d8cdb52074c2"
+            "id": "merge-results"
         },
         {
             "parameters": {
@@ -184,11 +305,10 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                176,
+                1104,
                 192
             ],
-            "id": "449f61bb-f0b4-4bc2-a2d8-e03e4f14cf15",
-            "webhookId": "0299fe5b-835f-436f-855f-36917c66e994",
+            "id": "send-result",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
@@ -224,10 +344,10 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                176,
+                1104,
                 352
             ],
-            "id": "3f20ba6c-0f45-4741-a98d-1f6070e6cd03",
+            "id": "log-to-database",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
@@ -282,25 +402,58 @@
             "main": [
                 [
                     {
-                        "node": "Call Supabase Aggregate",
+                        "node": "Batch 1 - Value Investors",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Call Supabase Aggregate": {
+        "Batch 1 - Value Investors": {
             "main": [
                 [
                     {
-                        "node": "Format Result",
+                        "node": "Batch 2 - Growth & Activist",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Format Result": {
+        "Batch 2 - Growth & Activist": {
+            "main": [
+                [
+                    {
+                        "node": "Batch 3 - Emerging & Technical",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Batch 3 - Emerging & Technical": {
+            "main": [
+                [
+                    {
+                        "node": "Batch 4 - Analysts",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Batch 4 - Analysts": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Results": {
             "main": [
                 [
                     {
@@ -317,14 +470,14 @@
             ]
         }
     },
-    "active": true,
+    "active": false,
     "settings": {
         "executionOrder": "v1"
     },
-    "versionId": "5a54d2e2-0b22-48fc-8cc8-cfa53d8afba1",
+    "versionId": "batched-v1",
     "meta": {
-        "instanceId": "a543e5018053c03df832d6ac73af6c1a33f61d9045f4d98453e98d306a4b77f2"
+        "instanceId": "ai-hedge-fund"
     },
-    "id": "3v3Rtap7zEWdBbuY",
+    "id": "strong-signal-alert-batched",
     "tags": []
 }
