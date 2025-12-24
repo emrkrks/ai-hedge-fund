@@ -94,12 +94,13 @@ async function callGemini(
     maxTokens: number
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("GEMINI_API_KEY");
+    const modelName = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash-lite";
 
     if (!apiKey) {
         throw new Error("Gemini API key not configured");
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
         method: "POST",
@@ -145,6 +146,7 @@ async function callZai(
     maxTokens: number
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("ZAI_API_KEY");
+    const modelName = Deno.env.get("ZAI_MODEL") || "glm-4v-flash";
 
     if (!apiKey) {
         throw new Error("Z.ai API key not configured");
@@ -159,7 +161,7 @@ async function callZai(
             Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-            model: "glm-4v-flash",
+            model: modelName,
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt },
@@ -190,6 +192,7 @@ async function callGroq(
     maxTokens: number
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("GROQ_API_KEY");
+    const modelName = Deno.env.get("GROQ_MODEL") || "llama-3.3-70b-versatile";
 
     if (!apiKey) {
         throw new Error("Groq API key not configured");
@@ -204,7 +207,7 @@ async function callGroq(
             Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-            model: "llama-3.3-70b-versatile", // Fast and capable model
+            model: modelName,
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt },
