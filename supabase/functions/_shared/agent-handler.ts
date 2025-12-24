@@ -1,16 +1,26 @@
 // Supabase Edge Functions - Generic Agent Handler
 // Reusable handler for all agent Edge Functions
-// Supports Multi-LLM Consensus Mode (4 LLMs: Azure, Gemini, Z.ai, Groq)
+// NOW WITH FORMULA-BASED ANALYSIS (like original Python project)
 
 import { corsHeaders, handleCors } from "./cors.ts";
-import { callLLM, callWithConsensus, LLMProvider, ALL_PROVIDERS } from "./llm-client.ts";
+import { callLLM, LLMProvider } from "./llm-client.ts";
 import { getAgentPrompt } from "./prompts.ts";
 import { getComprehensiveData } from "./financial-api.ts";
-import { AnalyzeRequest, AnalysisResult, AGENT_CONFIG } from "./types.ts";
+import { AnalyzeRequest, AnalysisResult, AGENT_CONFIG, FinancialMetrics, InsiderTrade, NewsItem, PriceData } from "./types.ts";
+import {
+    analyzeMichaelBurry,
+    analyzeCharlieMunger,
+    analyzeWarrenBuffett,
+    analyzeGrowth,
+    analyzeSentiment,
+    analyzeTechnical,
+    analyzeFundamentals,
+} from "./agent-analysis.ts";
 
 /**
  * Create a generic agent handler for Supabase Edge Functions
- * Supports both single LLM and multi-LLM consensus modes
+ * Uses FORMULA-BASED analysis for signal/confidence (like original Python)
+ * LLM is only used for reasoning/narrative
  */
 export function createAgentHandler(agentKey: string) {
     return async (req: Request): Promise<Response> => {
@@ -24,8 +34,7 @@ export function createAgentHandler(agentKey: string) {
                 ticker,
                 end_date,
                 llm_provider = "gemini",
-                use_consensus = false,  // Enable multi-LLM consensus mode
-            } = request as AnalyzeRequest & { use_consensus?: boolean };
+            } = request;
 
             if (!ticker) {
                 return new Response(
@@ -45,53 +54,38 @@ export function createAgentHandler(agentKey: string) {
             // 1. Fetch comprehensive financial data
             const data = await getComprehensiveData(ticker, end_date);
 
-            // 2. Build analysis context based on agent type
+            // 2. Build analysis context
             const analysisContext = buildAgentContext(agentKey, data);
 
-            // 3. Get the agent's prompt
+            // 3. RUN FORMULA-BASED ANALYSIS (like original Python)
+            const formulaAnalysis = runFormulaAnalysis(agentKey, data);
+
+            // Use formula-calculated signal and confidence
+            let signal = formulaAnalysis.signal;
+            let confidence = formulaAnalysis.confidence;
+
+            // 4. Get LLM reasoning (LLM only writes the narrative, not decides signal)
             const prompt = getAgentPrompt(agentKey);
-            const systemPrompt = prompt.system;
-            const userPrompt = prompt.user(ticker, analysisContext);
+            const systemPrompt = prompt.system + `\n\nIMPORTANT: Based on the analysis, the calculated signal is ${signal} with ${confidence}% confidence. Your job is to explain WHY this is the signal, not to change it.`;
+            const userPrompt = prompt.user(ticker, {
+                ...analysisContext,
+                calculated_signal: signal,
+                calculated_confidence: confidence,
+                analysis_details: formulaAnalysis.analysis_summary,
+            });
 
-            let signal: "BULLISH" | "BEARISH" | "NEUTRAL";
-            let confidence: number;
             let reasoning: string;
-            let llmDetails: Record<string, unknown> = {};
-
-            if (use_consensus) {
-                // 4a. CONSENSUS MODE: Call all 4 LLMs and aggregate results
-                console.log(`[${agentKey}] Using consensus mode with 4 LLMs...`);
-
-                const consensusResult = await callWithConsensus(systemPrompt, userPrompt, ALL_PROVIDERS);
-
-                signal = consensusResult.consensus_signal;
-                confidence = consensusResult.consensus_confidence;
-                reasoning = consensusResult.consensus_reasoning;
-                llmDetails = {
-                    mode: "consensus",
-                    providers_used: ALL_PROVIDERS,
-                    vote_breakdown: consensusResult.vote_breakdown,
-                    individual_results: consensusResult.individual_results.map(r => ({
-                        provider: r.provider,
-                        signal: r.signal,
-                        confidence: r.confidence,
-                    })),
-                };
-            } else {
-                // 4b. SINGLE LLM MODE: Use specified provider
+            try {
                 const llmResponse = await callLLM({
                     provider: llm_provider as LLMProvider,
                     systemPrompt,
                     userPrompt,
                 });
-
-                signal = llmResponse.signal.toUpperCase() as "BULLISH" | "BEARISH" | "NEUTRAL";
-                confidence = llmResponse.confidence;
                 reasoning = llmResponse.reasoning;
-                llmDetails = {
-                    mode: "single",
-                    provider: llm_provider,
-                };
+            } catch (llmError) {
+                // If LLM fails, use analysis summary as reasoning
+                console.error(`LLM failed for ${agentKey}, using formula summary:`, llmError);
+                reasoning = buildReasoningFromAnalysis(agentKey, formulaAnalysis);
             }
 
             // 5. Build the result
@@ -105,7 +99,9 @@ export function createAgentHandler(agentKey: string) {
                 timestamp: new Date().toISOString(),
                 analysis_data: {
                     ...analysisContext,
-                    llm_details: llmDetails,
+                    formula_analysis: formulaAnalysis.analysis_summary,
+                    total_score: formulaAnalysis.total_score,
+                    max_score: formulaAnalysis.max_score,
                 },
             };
 
@@ -123,6 +119,138 @@ export function createAgentHandler(agentKey: string) {
             );
         }
     };
+}
+
+/**
+ * Run formula-based analysis for the agent (like original Python)
+ */
+function runFormulaAnalysis(agentKey: string, data: Record<string, unknown>) {
+    const metrics = data.financial_metrics as FinancialMetrics || { ticker: "" };
+    const lineItems = Array.isArray(data.financial_line_items) ? data.financial_line_items : [];
+    const marketCap = data.market_cap as number | undefined;
+    const insiderTrades = Array.isArray(data.insider_trades) ? data.insider_trades as InsiderTrade[] : [];
+    const news = Array.isArray(data.news) ? data.news as NewsItem[] : [];
+    const prices = Array.isArray(data.prices) ? data.prices as PriceData[] : [];
+
+    // Route to specific analysis function based on agent
+    switch (agentKey) {
+        case "michael_burry":
+            return analyzeMichaelBurry(metrics, lineItems, marketCap, insiderTrades, news);
+
+        case "charlie_munger":
+            return analyzeCharlieMunger(metrics, lineItems, marketCap, insiderTrades, news);
+
+        case "warren_buffett":
+            return analyzeWarrenBuffett(metrics, lineItems, marketCap, insiderTrades, news);
+
+        case "growth_analyst":
+            return analyzeGrowth(metrics, lineItems, prices);
+
+        case "sentiment_analyst":
+            return analyzeSentiment(insiderTrades, news);
+
+        case "technical_analyst":
+            return analyzeTechnical(prices);
+
+        case "fundamentals_analyst":
+            return analyzeFundamentals(metrics, lineItems);
+
+        // For other agents, use a generic analysis approach
+        default:
+            return runGenericAnalysis(metrics, lineItems, marketCap, insiderTrades, news);
+    }
+}
+
+/**
+ * Generic analysis for agents without specific formula implementation
+ */
+function runGenericAnalysis(
+    metrics: FinancialMetrics,
+    lineItems: Record<string, unknown>[],
+    marketCap: number | undefined,
+    insiderTrades: InsiderTrade[],
+    news: NewsItem[]
+) {
+    let score = 5; // Neutral baseline
+    const maxScore = 10;
+    const details: string[] = [];
+
+    // Profitability check
+    if (metrics.return_on_equity !== undefined) {
+        if (metrics.return_on_equity > 0.15) {
+            score += 1;
+            details.push(`Good ROE ${(metrics.return_on_equity * 100).toFixed(1)}%`);
+        } else if (metrics.return_on_equity < 0.05) {
+            score -= 1;
+            details.push(`Weak ROE ${(metrics.return_on_equity * 100).toFixed(1)}%`);
+        }
+    }
+
+    // Leverage check
+    if (metrics.debt_to_equity !== undefined) {
+        if (metrics.debt_to_equity < 0.5) {
+            score += 1;
+            details.push(`Low debt D/E ${metrics.debt_to_equity.toFixed(2)}`);
+        } else if (metrics.debt_to_equity > 1.5) {
+            score -= 1;
+            details.push(`High debt D/E ${metrics.debt_to_equity.toFixed(2)}`);
+        }
+    }
+
+    // Growth check
+    if (metrics.revenue_growth !== undefined) {
+        if (metrics.revenue_growth > 0.15) {
+            score += 1;
+            details.push(`Strong growth ${(metrics.revenue_growth * 100).toFixed(1)}%`);
+        } else if (metrics.revenue_growth < 0) {
+            score -= 1;
+            details.push(`Declining revenue ${(metrics.revenue_growth * 100).toFixed(1)}%`);
+        }
+    }
+
+    // Valuation check
+    if (metrics.price_to_earnings !== undefined && metrics.price_to_earnings > 0) {
+        if (metrics.price_to_earnings < 15) {
+            score += 1;
+            details.push(`Attractive P/E ${metrics.price_to_earnings.toFixed(1)}`);
+        } else if (metrics.price_to_earnings > 30) {
+            score -= 1;
+            details.push(`High P/E ${metrics.price_to_earnings.toFixed(1)}`);
+        }
+    }
+
+    // Normalize score
+    score = Math.max(0, Math.min(maxScore, score));
+
+    let signal: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+    if (score >= 7) signal = "BULLISH";
+    else if (score <= 3) signal = "BEARISH";
+
+    const confidence = Math.round((score / maxScore) * 100);
+
+    return {
+        signal,
+        confidence,
+        analysis_summary: { generic: { score, max_score: maxScore, details: details.join("; ") } },
+        total_score: score,
+        max_score: maxScore,
+    };
+}
+
+/**
+ * Build reasoning from analysis when LLM fails
+ */
+function buildReasoningFromAnalysis(agentKey: string, analysis: { signal: string; confidence: number; analysis_summary: Record<string, { score: number; max_score: number; details: string }> }) {
+    const parts: string[] = [];
+    parts.push(`Signal: ${analysis.signal} (${analysis.confidence}% confidence)`);
+
+    for (const [key, value] of Object.entries(analysis.analysis_summary)) {
+        if (value.details) {
+            parts.push(`${key}: ${value.details}`);
+        }
+    }
+
+    return parts.join("\n");
 }
 
 /**
