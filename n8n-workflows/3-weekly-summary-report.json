@@ -16,16 +16,15 @@
             "type": "n8n-nodes-base.scheduleTrigger",
             "typeVersion": 1,
             "position": [
-                -400,
-                200
+                -800,
+                80
             ],
-            "id": "cron-trigger"
+            "id": "810b2fcb-ffdc-4b25-943a-1d343bbe22a0"
         },
         {
             "parameters": {
                 "operation": "getAll",
                 "tableId": "analyses_aggregated",
-                "returnAll": false,
                 "limit": 500,
                 "filterType": "string",
                 "filterString": "created_at=gte.{{ $now.minus(7, 'days').toISO().split('T')[0] }}"
@@ -34,16 +33,16 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                -200,
-                200
+                -592,
+                80
             ],
+            "id": "e33e1ded-78ba-4954-b2f2-43361639de92",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "get-analyses"
+            }
         },
         {
             "parameters": {
@@ -53,10 +52,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                0,
-                200
+                -400,
+                80
             ],
-            "id": "generate-summary"
+            "id": "1655ff79-b1e4-499a-ba76-67914c0efe5a"
         },
         {
             "parameters": {
@@ -70,16 +69,17 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                200,
-                100
+                -192,
+                -32
             ],
+            "id": "671779be-acc3-4efd-9cc0-93fade8c5ad0",
+            "webhookId": "897bab1e-615e-4b07-abb3-19fe6899083d",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "send-telegram"
+            }
         },
         {
             "parameters": {
@@ -109,18 +109,34 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                200,
-                300
+                -192,
+                176
             ],
+            "id": "0b988bad-cfa2-4591-b02a-bde63a754b83",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "save-summary"
+            }
         }
     ],
+    "pinData": {
+        "Cron Trigger (Sunday 18:00)": [
+            {
+                "json": {
+                    "name": "First item",
+                    "code": 1
+                }
+            },
+            {
+                "json": {
+                    "name": "Second item",
+                    "code": 2
+                }
+            }
+        ]
+    },
     "connections": {
         "Cron Trigger (Sunday 18:00)": {
             "main": [
@@ -161,14 +177,14 @@
             ]
         }
     },
-    "active": false,
+    "active": true,
     "settings": {
-        "executionOrder": "v1",
-        "timezone": "Europe/Madrid"
+        "executionOrder": "v1"
     },
-    "tags": [
-        "weekly",
-        "summary",
-        "supabase-edge"
-    ]
+    "versionId": "efceb2a6-e175-49c9-ac8a-0e20e0dc3614",
+    "meta": {
+        "instanceId": "a543e5018053c03df832d6ac73af6c1a33f61d9045f4d98453e98d306a4b77f2"
+    },
+    "id": "uXjycBICa7OTWWU9",
+    "tags": []
 }

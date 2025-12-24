@@ -16,16 +16,15 @@
             "type": "n8n-nodes-base.scheduleTrigger",
             "typeVersion": 1,
             "position": [
-                -400,
-                200
+                -1760,
+                -48
             ],
-            "id": "cron-trigger"
+            "id": "85e1bd85-8f44-4f40-99f3-b5c2db0e7036"
         },
         {
             "parameters": {
                 "operation": "getAll",
                 "tableId": "watchlists",
-                "returnAll": false,
                 "limit": 20,
                 "filterType": "string",
                 "filterString": "alert_enabled=eq.true"
@@ -34,16 +33,16 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                -200,
-                200
+                -1552,
+                -48
             ],
+            "id": "f282e1cb-1a8a-433a-aac6-3c0b8d701fed",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "get-watchlist"
+            }
         },
         {
             "parameters": {
@@ -54,14 +53,13 @@
             "type": "n8n-nodes-base.splitInBatches",
             "typeVersion": 1,
             "position": [
-                0,
-                200
+                -1360,
+                -48
             ],
-            "id": "loop-tickers"
+            "id": "e01d7337-41d2-458b-800f-a4134c90f6fd"
         },
         {
             "parameters": {
-                "method": "GET",
                 "url": "=https://api.stocktwits.com/api/2/streams/symbol/{{ $json.ticker }}.json",
                 "sendHeaders": true,
                 "headerParameters": {
@@ -80,10 +78,10 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                200,
-                200
+                -1152,
+                -48
             ],
-            "id": "stocktwits-fetch"
+            "id": "dacf2985-6292-47c5-8f81-4e868b7edd81"
         },
         {
             "parameters": {
@@ -93,10 +91,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                400,
-                200
+                -960,
+                -48
             ],
-            "id": "analyze-sentiment"
+            "id": "a70894a1-d72b-41aa-8fac-3e941133b9df"
         },
         {
             "parameters": {
@@ -154,16 +152,16 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                600,
-                200
+                -752,
+                -48
             ],
+            "id": "8f1a69d9-fab8-4cd4-bbb3-870154372a99",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "save-scuttlebutt"
+            }
         },
         {
             "parameters": {
@@ -191,16 +189,17 @@
                             }
                         }
                     ]
-                }
+                },
+                "options": {}
             },
             "name": "IF Strong Sentiment",
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                800,
-                200
+                -560,
+                -48
             ],
-            "id": "if-strong"
+            "id": "a93fe62f-812f-4307-8cb1-226ac57de713"
         },
         {
             "parameters": {
@@ -214,16 +213,17 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                1000,
-                150
+                -352,
+                -96
             ],
+            "id": "af0b2bbc-a517-488f-b8ee-9d950e424d48",
+            "webhookId": "63c0a109-4395-4b5d-8b33-a7c6f4ebef15",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "alert-telegram"
+            }
         },
         {
             "parameters": {},
@@ -231,12 +231,13 @@
             "type": "n8n-nodes-base.noOp",
             "typeVersion": 1,
             "position": [
-                1000,
-                300
+                -352,
+                64
             ],
-            "id": "continue-loop"
+            "id": "0edf8185-a3aa-4492-bd58-c8be952185f0"
         }
     ],
+    "pinData": {},
     "connections": {
         "Cron Trigger (Weekdays 08:00)": {
             "main": [
@@ -345,15 +346,14 @@
             ]
         }
     },
-    "active": false,
+    "active": true,
     "settings": {
-        "executionOrder": "v1",
-        "timezone": "Europe/Madrid"
+        "executionOrder": "v1"
     },
-    "tags": [
-        "scuttlebutt",
-        "stocktwits",
-        "sentiment",
-        "fisher"
-    ]
+    "versionId": "fbe2eebf-8c1f-496e-902f-03f7962cb9cc",
+    "meta": {
+        "instanceId": "a543e5018053c03df832d6ac73af6c1a33f61d9045f4d98453e98d306a4b77f2"
+    },
+    "id": "UVelpCLpJ7HhAxZR",
+    "tags": []
 }

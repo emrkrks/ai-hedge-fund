@@ -16,15 +16,14 @@
             "type": "n8n-nodes-base.scheduleTrigger",
             "typeVersion": 1,
             "position": [
-                -800,
-                300
+                144,
+                32
             ],
-            "id": "cron"
+            "id": "6ca63d80-d2f4-4d32-adfa-854992a5a06f"
         },
         {
             "parameters": {
-                "method": "GET",
-                "url": "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID_HERE",
+                "url": "https://drive.google.com/uc?export=download&id=1SpdyYhBaZB6ZGRA_bZQcqKa_X5YwWzCK",
                 "options": {
                     "response": {
                         "response": {
@@ -38,56 +37,52 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                -600,
-                300
+                352,
+                32
             ],
-            "id": "download-csv"
+            "id": "e917eb21-9b84-4792-9ccf-36cabbf6c312"
         },
         {
             "parameters": {
-                "mode": "runOnceForAllItems",
                 "jsCode": "const csvText = $input.first().json.data || $input.first().json.body || String($input.first().json);\nconst lines = csvText.split('\\n').filter(line => line.trim());\nif (lines.length < 2) throw new Error('CSV is empty');\nconst headers = lines[0].split(',').map(h => h.replace(/\"/g, '').trim());\nconst rows = [];\nfor (let i = 1; i < lines.length; i++) {\n  const values = [];\n  let current = '', inQuotes = false;\n  for (const char of lines[i]) {\n    if (char === '\"') inQuotes = !inQuotes;\n    else if (char === ',' && !inQuotes) { values.push(current.trim()); current = ''; }\n    else current += char;\n  }\n  values.push(current.trim());\n  const row = {};\n  headers.forEach((h, idx) => { row[h] = values[idx] || ''; });\n  rows.push({ json: row });\n}\nreturn rows;"
             },
             "name": "Parse CSV",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -400,
-                300
+                544,
+                32
             ],
-            "id": "parse-csv"
+            "id": "8898bb99-c96a-4ef1-abd9-b19051255228"
         },
         {
             "parameters": {
-                "mode": "runOnceForAllItems",
                 "jsCode": "const items = $input.all();\nconst positions = {};\nfor (const item of items) {\n  const row = item.json;\n  const way = row.Way || '';\n  const baseType = row['Base type'] || '';\n  if (!way || way === 'Way' || baseType !== 'STOCK') continue;\n  if (way !== 'BUY' && way !== 'SELL') continue;\n  const baseCurrency = row['Base currency (name)'] || '';\n  const tickerMatch = baseCurrency.match(/^([A-Z0-9.]+)\\s*\\(/);\n  if (!tickerMatch) continue;\n  const ticker = tickerMatch[1].replace('.MC', '');\n  const companyName = baseCurrency.match(/\\(([^)]+)\\)/)?.[1] || ticker;\n  const amount = parseFloat(row['Base amount']) || 0;\n  const quoteAmount = parseFloat(row['Quote amount']) || 0;\n  if (!positions[ticker]) positions[ticker] = { ticker, company_name: companyName, total_shares: 0, total_cost: 0 };\n  if (way === 'BUY') { positions[ticker].total_shares += amount; positions[ticker].total_cost += quoteAmount; }\n  else if (way === 'SELL') {\n    positions[ticker].total_shares -= amount;\n    if (positions[ticker].total_shares > 0) positions[ticker].total_cost *= positions[ticker].total_shares / (positions[ticker].total_shares + amount);\n    else positions[ticker].total_cost = 0;\n  }\n}\nconst active = Object.values(positions).filter(p => p.total_shares > 0.0001).map(p => ({\n  ticker: p.ticker, company_name: p.company_name,\n  shares: Math.round(p.total_shares * 1000000) / 1000000,\n  total_cost: Math.round(Math.abs(p.total_cost) * 100) / 100,\n  avg_cost: Math.round((p.total_cost / p.total_shares) * 100) / 100\n}));\n// Clear static data at start\nconst staticData = $getWorkflowStaticData('global');\nstaticData.results = [];\nreturn active.map(p => ({ json: p }));"
             },
             "name": "Aggregate Positions",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -200,
-                300
+                752,
+                32
             ],
-            "id": "aggregate"
+            "id": "b09c291a-eafb-48ff-a484-9b6106a35e39"
         },
         {
             "parameters": {
-                "batchSize": 1,
                 "options": {}
             },
             "name": "Loop",
             "type": "n8n-nodes-base.splitInBatches",
             "typeVersion": 3,
             "position": [
-                0,
-                300
+                912,
+                -96
             ],
-            "id": "loop"
+            "id": "41bec95c-ec7b-475b-bf80-177e3126dd0e"
         },
         {
             "parameters": {
-                "method": "GET",
                 "url": "=https://query1.finance.yahoo.com/v8/finance/chart/{{ $json.ticker }}?interval=1d&range=5d",
                 "options": {
                     "timeout": 15000
@@ -97,10 +92,10 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                200,
-                300
+                1152,
+                32
             ],
-            "id": "yahoo"
+            "id": "ade8b9ee-dec8-4054-9ce8-b08444c8ce1f"
         },
         {
             "parameters": {
@@ -110,10 +105,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                400,
-                300
+                1344,
+                32
             ],
-            "id": "calc-pl"
+            "id": "366f1d4e-c886-4151-8d4b-9d657b8d56d0"
         },
         {
             "parameters": {
@@ -143,10 +138,10 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                600,
-                300
+                1552,
+                32
             ],
-            "id": "ai"
+            "id": "194630fa-6d2f-428a-ab6f-b6ff7eaeeb39"
         },
         {
             "parameters": {
@@ -156,10 +151,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                800,
-                300
+                1744,
+                32
             ],
-            "id": "merge"
+            "id": "6e65b595-c73a-4de4-9c25-7e7a6a1e9aea"
         },
         {
             "parameters": {
@@ -221,16 +216,16 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                1000,
-                300
+                1952,
+                32
             ],
+            "id": "33f83c30-77c0-46b5-9fba-07b5f474241a",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "save-db"
+            }
         },
         {
             "parameters": {},
@@ -238,24 +233,23 @@
             "type": "n8n-nodes-base.noOp",
             "typeVersion": 1,
             "position": [
-                1200,
-                300
+                2144,
+                32
             ],
-            "id": "next"
+            "id": "76b3fe77-7047-4fb9-9e46-57ef77e54384"
         },
         {
             "parameters": {
-                "mode": "runOnceForAllItems",
                 "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst holdings = staticData.results || [];\nif (!holdings.length) return [{ json: { summary_text: '⚠️ Veri bulunamadı!' } }];\nlet totalCost = 0, totalValue = 0, totalDailyPL = 0, totalPL = 0;\nconst lines = [];\nholdings.sort((a,b) => (b.current_value||0) - (a.current_value||0));\nfor (const h of holdings) {\n  totalCost += h.total_cost || 0;\n  totalValue += h.current_value || 0;\n  totalDailyPL += h.daily_pl || 0;\n  totalPL += h.unrealized_pl || 0;\n  let plE = '⚪';\n  const pct = h.unrealized_pl_pct || 0;\n  if (pct > 20) plE = '🚀'; else if (pct > 5) plE = '🟢'; else if (pct > -5) plE = '⚪'; else if (pct > -20) plE = '🟡'; else plE = '🔴';\n  const dE = (h.daily_pl||0) >= 0 ? '📈' : '📉';\n  const rE = h.ai_signal === 'BULLISH' ? '🟢' : (h.ai_signal === 'BEARISH' ? '🔴' : '⚪');\n  const ps = (h.unrealized_pl||0) >= 0 ? '+' : '';\n  const ds = (h.daily_pl||0) >= 0 ? '+' : '';\n  lines.push(`${plE} *${h.ticker}*\\n   💰 $${(h.current_price||0).toFixed(2)} × ${(h.shares||0).toFixed(2)}\\n   📊 $${(h.total_cost||0).toFixed(0)} → $${(h.current_value||0).toFixed(0)}\\n   ${dE} Gün: ${ds}$${(h.daily_pl||0).toFixed(0)}\\n   📈 Top: ${ps}$${(h.unrealized_pl||0).toFixed(0)} (${ps}${pct.toFixed(1)}%)\\n   🤖 ${rE} ${h.ai_signal||'N/A'} %${h.ai_confidence||0} → ${h.recommendation||'HOLD'}`);\n}\nconst plPct = totalCost > 0 ? (totalPL/totalCost)*100 : 0;\nconst dPct = (totalValue-totalDailyPL) > 0 ? (totalDailyPL/(totalValue-totalDailyPL))*100 : 0;\nlet oE = '⚪'; if (plPct > 20) oE = '🚀'; else if (plPct > 5) oE = '🟢'; else if (plPct > -5) oE = '⚪'; else if (plPct > -20) oE = '🟡'; else oE = '🔴';\nconst dE = totalDailyPL >= 0 ? '📈' : '📉';\nconst now = new Date();\nconst dt = now.toLocaleDateString('tr-TR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});\nconst msg = `📊 *PORTFÖY GÜNLÜK RAPORU*\\n⏰ ${dt}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n${oE} *TOPLAM PORTFÖY*\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n💵 *Yatırım:* $${totalCost.toFixed(0)}\\n💰 *Değer:* $${totalValue.toFixed(0)}\\n\\n${dE} *Günlük:* ${totalDailyPL>=0?'+':''}$${totalDailyPL.toFixed(0)} (${totalDailyPL>=0?'+':''}${dPct.toFixed(2)}%)\\n\\n📈 *Toplam K/Z:* ${totalPL>=0?'+':''}$${totalPL.toFixed(0)} (${totalPL>=0?'+':''}${plPct.toFixed(2)}%)\\n\\n📋 *Pozisyon:* ${holdings.length}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n📋 *POZİSYONLAR*\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n${lines.join('\\n\\n')}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n_🤖 AI Hedge Fund - 17 Agent_`;\nstaticData.results = [];\nreturn [{ json: { summary_text: msg, total_cost: totalCost, total_value: totalValue, total_daily_pl: totalDailyPL, total_pl: totalPL, total_pl_pct: plPct, count: holdings.length } }];"
             },
             "name": "Generate Report",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                200,
-                500
+                1152,
+                240
             ],
-            "id": "report"
+            "id": "4da2fd67-49a0-498a-8db3-ec59a7f52b71"
         },
         {
             "parameters": {
@@ -269,16 +263,17 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                400,
-                500
+                1344,
+                240
             ],
+            "id": "73b1b05c-f6b4-43dd-aad6-d7a0ba868bc8",
+            "webhookId": "129cbdb2-f5e1-40b5-9222-295f97a74219",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "telegram"
+            }
         },
         {
             "parameters": {
@@ -316,18 +311,37 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                600,
-                500
+                1552,
+                240
             ],
+            "id": "d345c83b-a565-4f8c-ac85-ca36cecb25e0",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "save-summary"
+            }
         }
     ],
+    "pinData": {
+        "Cron (16:00)": [
+            {
+                "json": {
+                    "timestamp": "2025-12-23T19:32:47.318-05:00",
+                    "Readable date": "December 23rd 2025, 7:32:47 pm",
+                    "Readable time": "7:32:47 pm",
+                    "Day of week": "Tuesday",
+                    "Year": "2025",
+                    "Month": "December",
+                    "Day of month": "23",
+                    "Hour": "19",
+                    "Minute": "32",
+                    "Second": "47",
+                    "Timezone": "Europe/Madrid (UTC+01:00)"
+                }
+            }
+        ]
+    },
     "connections": {
         "Cron (16:00)": {
             "main": [
@@ -377,14 +391,14 @@
             "main": [
                 [
                     {
-                        "node": "Yahoo Price",
+                        "node": "Generate Report",
                         "type": "main",
                         "index": 0
                     }
                 ],
                 [
                     {
-                        "node": "Generate Report",
+                        "node": "Yahoo Price",
                         "type": "main",
                         "index": 0
                     }
@@ -474,13 +488,15 @@
             ]
         }
     },
-    "active": false,
+    "active": true,
     "settings": {
-        "executionOrder": "v1",
-        "timezone": "Europe/Madrid"
+        "executionOrder": "v1"
     },
-    "tags": [
-        "portfolio",
-        "daily"
-    ]
+    "versionId": "8f8ca7f6-249c-4f9b-8cc4-c74721044879",
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "a543e5018053c03df832d6ac73af6c1a33f61d9045f4d98453e98d306a4b77f2"
+    },
+    "id": "Oa3QCrL4jH6gAC2d",
+    "tags": []
 }

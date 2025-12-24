@@ -70,8 +70,9 @@ export function createAgentHandler(agentKey: string) {
 
         } catch (error) {
             console.error(`Error in analyze-${agentKey}:`, error);
+            const errorMessage = error instanceof Error ? error.message : String(error);
             return new Response(
-                JSON.stringify({ error: error.message }),
+                JSON.stringify({ error: errorMessage }),
                 { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
@@ -83,15 +84,17 @@ export function createAgentHandler(agentKey: string) {
  */
 function buildAgentContext(agentKey: string, data: Record<string, unknown>) {
     const metrics = data.financial_metrics as Record<string, unknown> || {};
-    const lineItems = data.financial_line_items as Record<string, unknown>[] || [];
+    // CRITICAL FIX: Ensure lineItems is always an array to prevent "slice is not a function" error
+    const rawLineItems = data.financial_line_items;
+    const lineItems = Array.isArray(rawLineItems) ? rawLineItems : [];
     const marketCap = data.market_cap as number;
     const esg = data.esg as Record<string, unknown> || {};
     const superinvestors = data.superinvestor_holdings as Record<string, unknown> || {};
     const peers = data.peers as Record<string, unknown> || {};
     const macro = data.macro as Record<string, unknown> || {};
-    const insiderTrades = data.insider_trades as Record<string, unknown>[] || [];
-    const news = data.news as Record<string, unknown>[] || [];
-    const prices = data.prices as Record<string, unknown>[] || [];
+    const insiderTrades = Array.isArray(data.insider_trades) ? data.insider_trades : [];
+    const news = Array.isArray(data.news) ? data.news : [];
+    const prices = Array.isArray(data.prices) ? data.prices : [];
 
     // Common metrics
     const roe = metrics.return_on_equity as number;

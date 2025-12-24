@@ -31,6 +31,14 @@ export interface FinancialMetrics {
     earnings_per_share?: number;
     free_cash_flow?: number;
     market_cap?: number;
+    // Additional metrics for comprehensive analysis
+    gross_margin?: number;
+    net_margin?: number;
+    peg_ratio?: number;
+    price_to_sales_ratio?: number;
+    earnings_per_share_growth?: number;
+    revenue_per_share?: number;
+    free_cash_flow_growth?: number;
 }
 
 export interface MacroData {
@@ -45,6 +53,7 @@ export interface PeerData {
     pe_ratio?: number;
     roe?: number;
     sector?: string;
+    industry?: string;
 }
 
 export interface ESGData {

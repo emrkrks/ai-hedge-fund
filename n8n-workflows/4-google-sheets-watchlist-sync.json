@@ -16,36 +16,43 @@
             "type": "n8n-nodes-base.scheduleTrigger",
             "typeVersion": 1,
             "position": [
-                -400,
-                200
+                -112,
+                -80
             ],
-            "id": "cron-trigger"
+            "id": "85c066cb-76f8-4a5d-b3bd-a0a18bd8a62d"
         },
         {
             "parameters": {
-                "operation": "read",
-                "sheetId": {
+                "documentId": {
                     "__rl": true,
-                    "value": "YOUR_GOOGLE_SHEET_ID",
-                    "mode": "id"
+                    "value": "1he6WiUvXITRxD3_Ux7HtquVN6qpCYP_ItmjENZ55aCg",
+                    "mode": "list",
+                    "cachedResultName": "Watchlist",
+                    "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1he6WiUvXITRxD3_Ux7HtquVN6qpCYP_ItmjENZ55aCg/edit?usp=drivesdk"
                 },
-                "range": "Watchlist!A2:B100",
+                "sheetName": {
+                    "__rl": true,
+                    "value": "gid=0",
+                    "mode": "list",
+                    "cachedResultName": "Sayfa1",
+                    "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1he6WiUvXITRxD3_Ux7HtquVN6qpCYP_ItmjENZ55aCg/edit#gid=0"
+                },
                 "options": {}
             },
             "name": "Read Google Sheets Watchlist",
             "type": "n8n-nodes-base.googleSheets",
             "typeVersion": 4,
             "position": [
-                -200,
-                200
+                96,
+                -80
             ],
+            "id": "104f3da3-fc97-422a-a6e1-c7e5c9062dbd",
             "credentials": {
                 "googleSheetsOAuth2Api": {
-                    "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
-                    "name": "Google Sheets Account"
+                    "id": "n2ij8lRtAAVjcADB",
+                    "name": "Google Sheets account"
                 }
-            },
-            "id": "read-sheets"
+            }
         },
         {
             "parameters": {
@@ -55,10 +62,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                0,
-                200
+                288,
+                -80
             ],
-            "id": "transform-tickers"
+            "id": "0c18a88d-5355-413d-8275-83cedd881c27"
         },
         {
             "parameters": {
@@ -80,16 +87,16 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                200,
-                200
+                496,
+                -80
             ],
+            "id": "5622c443-2cd6-466b-a081-f4a03642499d",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "upsert-watchlist"
+            }
         },
         {
             "parameters": {
@@ -103,18 +110,20 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                400,
-                200
+                688,
+                -80
             ],
+            "id": "e02805a5-5688-40a3-b72c-fa081044ca44",
+            "webhookId": "67652fcc-b2ec-4171-8070-4b576f818f3f",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "notify-telegram"
+            }
         }
     ],
+    "pinData": {},
     "connections": {
         "Cron Trigger (Weekdays 08:30)": {
             "main": [
@@ -161,14 +170,15 @@
             ]
         }
     },
-    "active": false,
+    "active": true,
     "settings": {
-        "executionOrder": "v1",
-        "timezone": "Europe/Madrid"
+        "executionOrder": "v1"
     },
-    "tags": [
-        "sync",
-        "google-sheets",
-        "watchlist"
-    ]
+    "versionId": "bea9604d-2be8-4376-a7a6-8ae2a4ae7cff",
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "a543e5018053c03df832d6ac73af6c1a33f61d9045f4d98453e98d306a4b77f2"
+    },
+    "id": "fJUqCuPhCtFAfTuK",
+    "tags": []
 }

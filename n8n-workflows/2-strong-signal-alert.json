@@ -12,17 +12,17 @@
             "type": "n8n-nodes-base.telegramTrigger",
             "typeVersion": 1,
             "position": [
-                -600,
-                200
+                -1040,
+                304
             ],
             "webhookId": "telegram-signal-trigger",
+            "id": "bf3ba2b6-a533-4367-b7fd-4a941e210aac",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "telegram-trigger"
+            }
         },
         {
             "parameters": {
@@ -32,19 +32,20 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -400,
-                200
+                -832,
+                304
             ],
-            "id": "parse-command"
+            "id": "0c01b9be-6754-4f64-a36f-95ac2f57d1f9"
         },
         {
             "parameters": {
                 "conditions": {
                     "options": {
                         "caseSensitive": true,
-                        "typeValidation": "strict"
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 1
                     },
-                    "combinator": "and",
                     "conditions": [
                         {
                             "leftValue": "={{ $json.isValid }}",
@@ -52,19 +53,22 @@
                             "operator": {
                                 "type": "boolean",
                                 "operation": "equals"
-                            }
+                            },
+                            "id": "84662242-a634-4fc2-91bd-c6c8ad7a5ca4"
                         }
-                    ]
-                }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
             },
             "name": "IF Valid Command",
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                -200,
-                200
+                -640,
+                304
             ],
-            "id": "if-valid"
+            "id": "c5407752-c414-4926-bbe1-e657a8d50c27"
         },
         {
             "parameters": {
@@ -78,16 +82,17 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                0,
-                350
+                -432,
+                448
             ],
+            "id": "4dd751c5-ec17-40f3-9577-869545b7e521",
+            "webhookId": "9b2a83c7-50b8-4d80-8980-45d1ae60d3a6",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "send-error"
+            }
         },
         {
             "parameters": {
@@ -101,16 +106,17 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                0,
-                100
+                -432,
+                192
             ],
+            "id": "f4a6967f-d2f1-4624-a9aa-936381da3fe4",
+            "webhookId": "8cd3e6d2-d424-4d5c-b58e-0cab594cfc54",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "send-processing"
+            }
         },
         {
             "parameters": {
@@ -142,10 +148,16 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4,
             "position": [
-                200,
-                100
+                -240,
+                192
             ],
-            "id": "call-aggregate"
+            "id": "6f7f5630-b1ed-450b-97d9-da0704745417",
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "4su2l4bSjSuWKNs2",
+                    "name": "Header Auth account"
+                }
+            }
         },
         {
             "parameters": {
@@ -155,10 +167,10 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                400,
-                100
+                -32,
+                192
             ],
-            "id": "format-result"
+            "id": "c71c87c4-bc70-4ecc-96fb-d8cdb52074c2"
         },
         {
             "parameters": {
@@ -172,16 +184,17 @@
             "type": "n8n-nodes-base.telegram",
             "typeVersion": 1,
             "position": [
-                600,
-                100
+                176,
+                192
             ],
+            "id": "449f61bb-f0b4-4bc2-a2d8-e03e4f14cf15",
+            "webhookId": "0299fe5b-835f-436f-855f-36917c66e994",
             "credentials": {
                 "telegramApi": {
                     "id": "3ocfCvvjIk4mgxda",
                     "name": "Telegram account"
                 }
-            },
-            "id": "send-result"
+            }
         },
         {
             "parameters": {
@@ -211,18 +224,19 @@
             "type": "n8n-nodes-base.supabase",
             "typeVersion": 1,
             "position": [
-                600,
-                250
+                176,
+                352
             ],
+            "id": "3f20ba6c-0f45-4741-a98d-1f6070e6cd03",
             "credentials": {
                 "supabaseApi": {
                     "id": "W2X8BWyusvwAEBsB",
                     "name": "Supabase account"
                 }
-            },
-            "id": "log-db"
+            }
         }
     ],
+    "pinData": {},
     "connections": {
         "Telegram Trigger": {
             "main": [
@@ -303,14 +317,14 @@
             ]
         }
     },
-    "active": false,
+    "active": true,
     "settings": {
-        "executionOrder": "v1",
-        "timezone": "Europe/Madrid"
+        "executionOrder": "v1"
     },
-    "tags": [
-        "telegram",
-        "signal",
-        "manual"
-    ]
+    "versionId": "5a54d2e2-0b22-48fc-8cc8-cfa53d8afba1",
+    "meta": {
+        "instanceId": "a543e5018053c03df832d6ac73af6c1a33f61d9045f4d98453e98d306a4b77f2"
+    },
+    "id": "3v3Rtap7zEWdBbuY",
+    "tags": []
 }

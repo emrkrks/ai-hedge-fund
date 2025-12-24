@@ -36,14 +36,19 @@ functions/
 
 ## 🚀 Deployment
 
-### 1. Secrets Ayarla
+### 1. Secrets Ayarla (Supabase Dashboard'da Settings > Edge Functions > Secrets)
 
 ```bash
-supabase secrets set AZURE_OPENAI_API_KEY=your_key
-supabase secrets set AZURE_OPENAI_ENDPOINT=https://xxx.openai.azure.com
+# FinancialDatasets.ai API (Orijinal Python projesindekiyle aynı)
+supabase secrets set FINANCIAL_DATASETS_API_KEY=your_financial_datasets_key
+
+# LLM Providers
 supabase secrets set GEMINI_API_KEY=your_gemini_key
+supabase secrets set AZURE_OPENAI_API_KEY=your_azure_key
+supabase secrets set AZURE_OPENAI_ENDPOINT=https://xxx.openai.azure.com
 supabase secrets set ZAI_API_KEY=your_zai_key
-supabase secrets set FMP_API_KEY=your_fmp_key
+
+# Opsiyonel (Macro data için)
 supabase secrets set FRED_API_KEY=your_fred_key
 ```
 

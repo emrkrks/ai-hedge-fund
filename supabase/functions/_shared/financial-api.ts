@@ -1,5 +1,5 @@
 // Supabase Edge Functions - Financial Data API Client
-// Fetches data from FMP (Financial Modeling Prep) and FRED
+// Uses FinancialDatasets.ai API (same as original Python project)
 
 import {
     FinancialMetrics,
@@ -11,58 +11,99 @@ import {
     PriceData,
 } from "./types.ts";
 
-const FMP_BASE_URL = "https://financialmodelingprep.com/api/v3";
+const FINANCIAL_DATASETS_BASE_URL = "https://api.financialdatasets.ai";
 const FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations";
 
 /**
- * Get FMP API key from environment
+ * Get FinancialDatasets.ai API key from Supabase secrets
  */
-function getFmpApiKey(): string {
-    const key = Deno.env.get("FMP_API_KEY");
+function getFinancialDatasetsApiKey(): string {
+    const key = Deno.env.get("FINANCIAL_DATASETS_API_KEY");
     if (!key) {
-        throw new Error("FMP_API_KEY not configured");
+        throw new Error("FINANCIAL_DATASETS_API_KEY not configured in Supabase secrets");
     }
     return key;
 }
 
 /**
- * Get FRED API key from environment
+ * Get FRED API key from environment (optional for macro data)
  */
-function getFredApiKey(): string {
-    const key = Deno.env.get("FRED_API_KEY");
-    if (!key) {
-        throw new Error("FRED_API_KEY not configured");
-    }
-    return key;
+function getFredApiKey(): string | null {
+    return Deno.env.get("FRED_API_KEY") || null;
 }
 
 /**
- * Fetch financial metrics from FMP
+ * Make API request to FinancialDatasets.ai
  */
-export async function getFinancialMetrics(ticker: string): Promise<FinancialMetrics> {
-    const apiKey = getFmpApiKey();
+async function makeFinancialDatasetsRequest(
+    endpoint: string,
+    method: "GET" | "POST" = "GET",
+    body?: Record<string, unknown>
+): Promise<unknown> {
+    const apiKey = getFinancialDatasetsApiKey();
+    const url = `${FINANCIAL_DATASETS_BASE_URL}${endpoint}`;
 
+    const headers: Record<string, string> = {
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
+    };
+
+    const options: RequestInit = {
+        method,
+        headers,
+    };
+
+    if (body && method === "POST") {
+        options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, options);
+
+    if (!response.ok) {
+        console.error(`FinancialDatasets API error: ${response.status} - ${await response.text()}`);
+        return null;
+    }
+
+    return await response.json();
+}
+
+/**
+ * Fetch financial metrics from FinancialDatasets.ai
+ */
+export async function getFinancialMetrics(
+    ticker: string,
+    endDate?: string,
+    period: string = "ttm",
+    limit: number = 10
+): Promise<FinancialMetrics> {
     try {
-        const [ratios, quote] = await Promise.all([
-            fetch(`${FMP_BASE_URL}/ratios-ttm/${ticker}?apikey=${apiKey}`).then(r => r.json()),
-            fetch(`${FMP_BASE_URL}/quote/${ticker}?apikey=${apiKey}`).then(r => r.json()),
-        ]);
+        const dateParam = endDate || new Date().toISOString().split("T")[0];
+        const data = await makeFinancialDatasetsRequest(
+            `/financial-metrics/?ticker=${ticker}&report_period_lte=${dateParam}&limit=${limit}&period=${period}`
+        ) as { financial_metrics?: Record<string, unknown>[] } | null;
 
-        const ratio = ratios?.[0] || {};
-        const quoteData = quote?.[0] || {};
+        const metrics = data?.financial_metrics?.[0] || {};
 
         return {
             ticker,
-            return_on_equity: ratio.returnOnEquityTTM,
-            debt_to_equity: ratio.debtEquityRatioTTM,
-            operating_margin: ratio.operatingProfitMarginTTM,
-            current_ratio: ratio.currentRatioTTM,
-            price_to_earnings: ratio.peRatioTTM,
-            price_to_book: ratio.priceToBookRatioTTM,
-            revenue_growth: ratio.revenueGrowth,
-            earnings_per_share: quoteData.eps,
-            free_cash_flow: undefined, // Would need separate call
-            market_cap: quoteData.marketCap,
+            return_on_equity: metrics.return_on_equity as number,
+            debt_to_equity: metrics.debt_to_equity as number,
+            operating_margin: metrics.operating_margin as number,
+            current_ratio: metrics.current_ratio as number,
+            price_to_earnings: metrics.price_to_earnings_ratio as number,
+            price_to_book: metrics.price_to_book_ratio as number,
+            revenue_growth: metrics.revenue_growth as number,
+            earnings_per_share: metrics.earnings_per_share as number,
+            free_cash_flow: metrics.free_cash_flow as number,
+            market_cap: metrics.market_cap as number,
+            // Additional metrics for agents
+            gross_margin: metrics.gross_margin as number,
+            net_margin: metrics.net_margin as number,
+            peg_ratio: metrics.peg_ratio as number,
+            price_to_sales_ratio: metrics.price_to_sales_ratio as number,
+            earnings_per_share_growth: metrics.earnings_per_share_growth as number,
+            revenue_per_share: metrics.revenue_per_share as number,
+            free_cash_flow_growth: metrics.free_cash_flow_growth as number,
         };
     } catch (error) {
         console.error(`Error fetching financial metrics for ${ticker}:`, error);
@@ -71,46 +112,87 @@ export async function getFinancialMetrics(ticker: string): Promise<FinancialMetr
 }
 
 /**
- * Fetch key financial line items
+ * Search for specific financial line items (like Python's search_line_items)
+ */
+export async function searchLineItems(
+    ticker: string,
+    lineItems: string[],
+    endDate?: string,
+    period: string = "annual",
+    limit: number = 10
+): Promise<Record<string, unknown>[]> {
+    try {
+        const dateParam = endDate || new Date().toISOString().split("T")[0];
+
+        const data = await makeFinancialDatasetsRequest(
+            "/financials/search/line-items",
+            "POST",
+            {
+                tickers: [ticker],
+                line_items: lineItems,
+                end_date: dateParam,
+                period: period,
+                limit: limit,
+            }
+        ) as { search_results?: Record<string, unknown>[] } | null;
+
+        // Return array of line items (always return array even if empty)
+        return data?.search_results || [];
+    } catch (error) {
+        console.error(`Error fetching line items for ${ticker}:`, error);
+        return [];
+    }
+}
+
+/**
+ * Fetch financial line items (simplified for compatibility)
+ * Returns array format expected by agent-handler
  */
 export async function getFinancialLineItems(
     ticker: string,
+    endDate?: string,
     period: "annual" | "quarter" = "annual",
-    limit: number = 5
+    limit: number = 10
 ): Promise<Record<string, unknown>[]> {
-    const apiKey = getFmpApiKey();
+    // Use the full line items list like the original Python project
+    const lineItems = [
+        "revenue",
+        "net_income",
+        "operating_income",
+        "return_on_invested_capital",
+        "gross_margin",
+        "operating_margin",
+        "free_cash_flow",
+        "capital_expenditure",
+        "cash_and_equivalents",
+        "total_debt",
+        "shareholders_equity",
+        "outstanding_shares",
+        "research_and_development",
+        "goodwill_and_intangible_assets",
+        "earnings_per_share",
+    ];
 
-    try {
-        const response = await fetch(
-            `${FMP_BASE_URL}/income-statement/${ticker}?period=${period}&limit=${limit}&apikey=${apiKey}`
-        );
-        return await response.json();
-    } catch (error) {
-        console.error(`Error fetching financial line items for ${ticker}:`, error);
-        return [];
-    }
+    return await searchLineItems(ticker, lineItems, endDate, period, limit);
 }
 
 /**
  * Fetch stock peers
  */
 export async function getPeers(ticker: string): Promise<PeerData> {
-    const apiKey = getFmpApiKey();
-
     try {
-        const [peersResponse, profileResponse] = await Promise.all([
-            fetch(`${FMP_BASE_URL}/stock_peers?symbol=${ticker}&apikey=${apiKey}`).then(r => r.json()),
-            fetch(`${FMP_BASE_URL}/profile/${ticker}?apikey=${apiKey}`).then(r => r.json()),
-        ]);
+        const data = await makeFinancialDatasetsRequest(
+            `/company/facts/?ticker=${ticker}`
+        ) as { company_facts?: Record<string, unknown> } | null;
 
-        const peers = peersResponse?.[0]?.peersList || [];
-        const profile = profileResponse?.[0] || {};
+        const facts = data?.company_facts || {};
 
         return {
-            peers,
-            pe_ratio: profile.peRatio,
-            roe: profile.roe,
-            sector: profile.sector,
+            peers: [], // FinancialDatasets doesn't provide peers directly
+            pe_ratio: facts.pe_ratio as number,
+            roe: facts.roe as number,
+            sector: facts.sector as string,
+            industry: facts.industry as string,
         };
     } catch (error) {
         console.error(`Error fetching peers for ${ticker}:`, error);
@@ -119,55 +201,37 @@ export async function getPeers(ticker: string): Promise<PeerData> {
 }
 
 /**
- * Fetch ESG data
+ * Fetch ESG data (placeholder - FinancialDatasets.ai doesn't have ESG)
  */
 export async function getESGData(ticker: string): Promise<ESGData> {
-    const apiKey = getFmpApiKey();
-
-    try {
-        const response = await fetch(
-            `${FMP_BASE_URL}/esg-environmental-social-governance-data?symbol=${ticker}&apikey=${apiKey}`
-        );
-        const data = await response.json();
-        const esg = data?.[0] || {};
-
-        const totalScore = esg.ESGScore || 0;
-        let esgSignal: "bullish" | "bearish" | "neutral" = "neutral";
-
-        if (totalScore >= 70) esgSignal = "bullish";
-        else if (totalScore < 40) esgSignal = "bearish";
-
-        return {
-            total_score: totalScore,
-            environment_score: esg.environmentScore,
-            social_score: esg.socialScore,
-            governance_score: esg.governanceScore,
-            esg_signal: esgSignal,
-            controversy_level: esg.controversyLevel,
-        };
-    } catch (error) {
-        console.error(`Error fetching ESG data for ${ticker}:`, error);
-        return { esg_signal: "neutral" };
-    }
+    // ESG data not available in FinancialDatasets.ai
+    return {
+        total_score: undefined,
+        esg_signal: "neutral",
+    };
 }
 
 /**
- * Fetch insider trades
+ * Fetch insider trades from FinancialDatasets.ai
  */
-export async function getInsiderTrades(ticker: string, limit: number = 50): Promise<InsiderTrade[]> {
-    const apiKey = getFmpApiKey();
-
+export async function getInsiderTrades(
+    ticker: string,
+    endDate?: string,
+    limit: number = 100
+): Promise<InsiderTrade[]> {
     try {
-        const response = await fetch(
-            `${FMP_BASE_URL}/insider-trading?symbol=${ticker}&limit=${limit}&apikey=${apiKey}`
-        );
-        const data = await response.json();
+        const dateParam = endDate || new Date().toISOString().split("T")[0];
 
-        return (data || []).map((trade: Record<string, unknown>) => ({
-            transaction_date: trade.transactionDate as string,
-            transaction_type: (trade.transactionType as string)?.toLowerCase().includes("buy") ? "buy" : "sell",
-            transaction_shares: Number(trade.securitiesTransacted) || 0,
-            owner_name: trade.reportingName as string,
+        const data = await makeFinancialDatasetsRequest(
+            `/insider-trades/?ticker=${ticker}&filing_date_lte=${dateParam}&limit=${limit}`
+        ) as { insider_trades?: Record<string, unknown>[] } | null;
+
+        return (data?.insider_trades || []).map((trade) => ({
+            transaction_date: trade.filing_date as string,
+            transaction_type: (trade.transaction_shares as number) > 0 ? "buy" : "sell",
+            transaction_shares: Math.abs(trade.transaction_shares as number) || 0,
+            transaction_value: trade.transaction_value as number,
+            owner_name: trade.owner_name as string,
         }));
     } catch (error) {
         console.error(`Error fetching insider trades for ${ticker}:`, error);
@@ -176,22 +240,25 @@ export async function getInsiderTrades(ticker: string, limit: number = 50): Prom
 }
 
 /**
- * Fetch company news
+ * Fetch company news from FinancialDatasets.ai
  */
-export async function getCompanyNews(ticker: string, limit: number = 20): Promise<NewsItem[]> {
-    const apiKey = getFmpApiKey();
-
+export async function getCompanyNews(
+    ticker: string,
+    endDate?: string,
+    limit: number = 50
+): Promise<NewsItem[]> {
     try {
-        const response = await fetch(
-            `${FMP_BASE_URL}/stock_news?tickers=${ticker}&limit=${limit}&apikey=${apiKey}`
-        );
-        const data = await response.json();
+        const dateParam = endDate || new Date().toISOString().split("T")[0];
 
-        return (data || []).map((news: Record<string, unknown>) => ({
+        const data = await makeFinancialDatasetsRequest(
+            `/news/?ticker=${ticker}&end_date=${dateParam}&limit=${limit}`
+        ) as { news?: Record<string, unknown>[] } | null;
+
+        return (data?.news || []).map((news) => ({
             title: news.title as string,
-            published_at: news.publishedDate as string,
-            source: news.site as string,
-            sentiment: undefined, // Would need sentiment analysis
+            published_at: news.date as string,
+            source: news.source as string,
+            sentiment: news.sentiment as "positive" | "negative" | "neutral" | undefined,
         }));
     } catch (error) {
         console.error(`Error fetching news for ${ticker}:`, error);
@@ -200,25 +267,24 @@ export async function getCompanyNews(ticker: string, limit: number = 20): Promis
 }
 
 /**
- * Fetch historical prices
+ * Fetch historical prices from FinancialDatasets.ai
  */
 export async function getHistoricalPrices(
     ticker: string,
     startDate?: string,
     endDate?: string
 ): Promise<PriceData[]> {
-    const apiKey = getFmpApiKey();
-
     try {
-        let url = `${FMP_BASE_URL}/historical-price-full/${ticker}?apikey=${apiKey}`;
-        if (startDate) url += `&from=${startDate}`;
-        if (endDate) url += `&to=${endDate}`;
+        const end = endDate || new Date().toISOString().split("T")[0];
+        // Default to 1 year of data
+        const start = startDate || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-        const response = await fetch(url);
-        const data = await response.json();
+        const data = await makeFinancialDatasetsRequest(
+            `/prices/?ticker=${ticker}&interval=day&interval_multiplier=1&start_date=${start}&end_date=${end}`
+        ) as { prices?: Record<string, unknown>[] } | null;
 
-        return (data?.historical || []).map((price: Record<string, unknown>) => ({
-            time: price.date as string,
+        return (data?.prices || []).map((price) => ({
+            time: price.time as string,
             open: Number(price.open) || 0,
             high: Number(price.high) || 0,
             low: Number(price.low) || 0,
@@ -232,17 +298,15 @@ export async function getHistoricalPrices(
 }
 
 /**
- * Fetch market cap
+ * Fetch market cap from company facts
  */
-export async function getMarketCap(ticker: string): Promise<number | undefined> {
-    const apiKey = getFmpApiKey();
-
+export async function getMarketCap(ticker: string, endDate?: string): Promise<number | undefined> {
     try {
-        const response = await fetch(
-            `${FMP_BASE_URL}/market-capitalization/${ticker}?apikey=${apiKey}`
-        );
-        const data = await response.json();
-        return data?.[0]?.marketCap;
+        const data = await makeFinancialDatasetsRequest(
+            `/company/facts/?ticker=${ticker}`
+        ) as { company_facts?: Record<string, unknown> } | null;
+
+        return data?.company_facts?.market_cap as number | undefined;
     } catch (error) {
         console.error(`Error fetching market cap for ${ticker}:`, error);
         return undefined;
@@ -250,10 +314,20 @@ export async function getMarketCap(ticker: string): Promise<number | undefined> 
 }
 
 /**
- * Fetch macro data from FRED
+ * Fetch macro data from FRED (optional)
  */
 export async function getMacroData(): Promise<MacroData> {
     const apiKey = getFredApiKey();
+
+    if (!apiKey) {
+        // Return defaults if no FRED API key
+        return {
+            vix: 20,
+            fed_funds_rate: 5.25,
+            yield_curve_10y_2y: 0,
+            yield_curve_inverted: false,
+        };
+    }
 
     try {
         const [vixResponse, fedFundsResponse, yieldCurveResponse] = await Promise.all([
@@ -262,8 +336,8 @@ export async function getMacroData(): Promise<MacroData> {
             fetch(`${FRED_BASE_URL}?series_id=T10Y2Y&api_key=${apiKey}&file_type=json&sort_order=desc&limit=1`).then(r => r.json()),
         ]);
 
-        const vix = parseFloat(vixResponse?.observations?.[0]?.value) || 0;
-        const fedFunds = parseFloat(fedFundsResponse?.observations?.[0]?.value) || 0;
+        const vix = parseFloat(vixResponse?.observations?.[0]?.value) || 20;
+        const fedFunds = parseFloat(fedFundsResponse?.observations?.[0]?.value) || 5.25;
         const yieldCurve = parseFloat(yieldCurveResponse?.observations?.[0]?.value) || 0;
 
         return {
@@ -274,65 +348,29 @@ export async function getMacroData(): Promise<MacroData> {
         };
     } catch (error) {
         console.error("Error fetching macro data:", error);
-        return { yield_curve_inverted: false };
+        return {
+            vix: 20,
+            fed_funds_rate: 5.25,
+            yield_curve_10y_2y: 0,
+            yield_curve_inverted: false,
+        };
     }
 }
 
 /**
- * Fetch superinvestor holdings (13-F data)
+ * Fetch superinvestor holdings (placeholder - would need Dataroma or WhaleWisdom API)
  */
 export async function getSuperinvestorHoldings(ticker: string): Promise<{
     owned_by_count: number;
     superinvestors: string[];
     cloning_signal: "bullish" | "bearish" | "neutral";
 }> {
-    // Note: FMP has limited 13-F data. Using placeholder logic.
-    // In production, would use a dedicated 13-F API like Dataroma or WhaleWisdom.
-
-    const apiKey = getFmpApiKey();
-
-    try {
-        const response = await fetch(
-            `${FMP_BASE_URL}/institutional-holder/${ticker}?apikey=${apiKey}`
-        );
-        const data = await response.json();
-
-        // Filter for known superinvestors
-        const knownSuperinvestors = [
-            "BERKSHIRE HATHAWAY",
-            "PERSHING SQUARE",
-            "SCION ASSET MANAGEMENT",
-            "ARK INVESTMENT",
-            "THIRD POINT",
-        ];
-
-        const holders = (data || [])
-            .filter((h: Record<string, unknown>) =>
-                knownSuperinvestors.some(s =>
-                    (h.holder as string)?.toUpperCase().includes(s)
-                )
-            )
-            .map((h: Record<string, unknown>) => h.holder as string);
-
-        const ownedByCount = holders.length;
-        let cloningSignal: "bullish" | "bearish" | "neutral" = "neutral";
-
-        if (ownedByCount >= 3) cloningSignal = "bullish";
-        else if (ownedByCount >= 1) cloningSignal = "neutral";
-
-        return {
-            owned_by_count: ownedByCount,
-            superinvestors: holders,
-            cloning_signal: cloningSignal,
-        };
-    } catch (error) {
-        console.error(`Error fetching superinvestor holdings for ${ticker}:`, error);
-        return {
-            owned_by_count: 0,
-            superinvestors: [],
-            cloning_signal: "neutral",
-        };
-    }
+    // Superinvestor data not available in FinancialDatasets.ai
+    return {
+        owned_by_count: 0,
+        superinvestors: [],
+        cloning_signal: "neutral",
+    };
 }
 
 /**
@@ -351,14 +389,14 @@ export async function getComprehensiveData(ticker: string, endDate?: string) {
         macroData,
         superinvestorHoldings,
     ] = await Promise.all([
-        getFinancialMetrics(ticker),
-        getFinancialLineItems(ticker),
+        getFinancialMetrics(ticker, endDate),
+        getFinancialLineItems(ticker, endDate),
         getPeers(ticker),
         getESGData(ticker),
-        getInsiderTrades(ticker),
-        getCompanyNews(ticker),
+        getInsiderTrades(ticker, endDate),
+        getCompanyNews(ticker, endDate),
         getHistoricalPrices(ticker, undefined, endDate),
-        getMarketCap(ticker),
+        getMarketCap(ticker, endDate),
         getMacroData(),
         getSuperinvestorHoldings(ticker),
     ]);
