@@ -38,17 +38,20 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMSignalRespons
 }
 
 /**
- * Azure OpenAI API call
+ * Azure OpenAI API call with retry logic
  */
 async function callAzureOpenAI(
     systemPrompt: string,
     userPrompt: string,
     temperature: number,
-    maxTokens: number
+    maxTokens: number,
+    retryCount: number = 0
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("AZURE_OPENAI_API_KEY");
     const endpoint = Deno.env.get("AZURE_OPENAI_ENDPOINT");
     const deploymentName = Deno.env.get("AZURE_OPENAI_DEPLOYMENT") || "gpt-4o-mini";
+    const maxRetries = 3;
+    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey || !endpoint) {
         throw new Error("Azure OpenAI credentials not configured");
@@ -74,8 +77,16 @@ async function callAzureOpenAI(
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Azure OpenAI error: ${error}`);
+        const errorText = await response.text();
+
+        // Retry on rate limit (429) error
+        if (response.status === 429 && retryCount < maxRetries) {
+            console.log(`Azure rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
+            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+            return callAzureOpenAI(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
+        }
+
+        throw new Error(`Azure OpenAI error: ${errorText}`);
     }
 
     const data = await response.json();
@@ -85,16 +96,19 @@ async function callAzureOpenAI(
 }
 
 /**
- * Google Gemini API call
+ * Google Gemini API call with retry logic
  */
 async function callGemini(
     systemPrompt: string,
     userPrompt: string,
     temperature: number,
-    maxTokens: number
+    maxTokens: number,
+    retryCount: number = 0
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     const modelName = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash-lite";
+    const maxRetries = 3;
+    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey) {
         throw new Error("Gemini API key not configured");
@@ -126,8 +140,16 @@ async function callGemini(
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Gemini error: ${error}`);
+        const errorText = await response.text();
+
+        // Retry on rate limit (429) error
+        if (response.status === 429 && retryCount < maxRetries) {
+            console.log(`Gemini rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
+            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+            return callGemini(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
+        }
+
+        throw new Error(`Gemini error: ${errorText}`);
     }
 
     const data = await response.json();
@@ -137,16 +159,19 @@ async function callGemini(
 }
 
 /**
- * Z.ai (GLM) API call
+ * Z.ai (GLM) API call with retry logic
  */
 async function callZai(
     systemPrompt: string,
     userPrompt: string,
     temperature: number,
-    maxTokens: number
+    maxTokens: number,
+    retryCount: number = 0
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("ZAI_API_KEY");
     const modelName = Deno.env.get("ZAI_MODEL") || "glm-4v-flash";
+    const maxRetries = 3;
+    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey) {
         throw new Error("Z.ai API key not configured");
@@ -172,8 +197,16 @@ async function callZai(
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Z.ai error: ${error}`);
+        const errorText = await response.text();
+
+        // Retry on rate limit (429) error
+        if (response.status === 429 && retryCount < maxRetries) {
+            console.log(`Z.ai rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
+            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+            return callZai(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
+        }
+
+        throw new Error(`Z.ai error: ${errorText}`);
     }
 
     const data = await response.json();
@@ -183,16 +216,19 @@ async function callZai(
 }
 
 /**
- * Groq API call (fast inference with Llama, Mixtral, etc.)
+ * Groq API call with retry logic (fast inference with Llama, Mixtral, etc.)
  */
 async function callGroq(
     systemPrompt: string,
     userPrompt: string,
     temperature: number,
-    maxTokens: number
+    maxTokens: number,
+    retryCount: number = 0
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("GROQ_API_KEY");
     const modelName = Deno.env.get("GROQ_MODEL") || "llama-3.3-70b-versatile";
+    const maxRetries = 3;
+    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey) {
         throw new Error("Groq API key not configured");
@@ -219,8 +255,16 @@ async function callGroq(
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Groq error: ${error}`);
+        const errorText = await response.text();
+
+        // Retry on rate limit (429) error
+        if (response.status === 429 && retryCount < maxRetries) {
+            console.log(`Groq rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
+            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+            return callGroq(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
+        }
+
+        throw new Error(`Groq error: ${errorText}`);
     }
 
     const data = await response.json();
