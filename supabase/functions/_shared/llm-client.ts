@@ -1,6 +1,7 @@
 // Supabase Edge Functions - LLM Client
 // Supports Azure OpenAI, Google Gemini, Z.ai (GLM), and Groq
 // Multi-LLM Consensus Mode for robust analysis
+// Enhanced rate limiting with exponential backoff
 
 import { LLMSignalResponse } from "./types.ts";
 
@@ -8,6 +9,88 @@ export type LLMProvider = "azure" | "gemini" | "zai" | "groq";
 
 // All available providers for consensus mode
 export const ALL_PROVIDERS: LLMProvider[] = ["azure", "gemini", "zai", "groq"];
+
+// ============================================================================
+// Rate Limiting Configuration for LLM Providers
+// ============================================================================
+const LLM_RATE_LIMIT_CONFIG = {
+    MAX_RETRIES: 5,                  // Maximum retry attempts (increased from 3)
+    INITIAL_COOLDOWN_MS: 10000,      // Initial cooldown: 10 seconds (increased from 5s)
+    MAX_COOLDOWN_MS: 60000,          // Maximum cooldown: 60 seconds
+    BACKOFF_MULTIPLIER: 2,           // Exponential backoff multiplier
+    JITTER_MAX_MS: 2000,             // Random jitter up to 2 seconds
+    DELAY_BETWEEN_PROVIDERS_MS: 2000, // Delay between sequential provider calls
+};
+
+// Track last request time per provider to prevent rapid fire
+const lastProviderRequestTime: Record<LLMProvider, number> = {
+    azure: 0,
+    gemini: 0,
+    zai: 0,
+    groq: 0,
+};
+
+/**
+ * Sleep utility
+ */
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Add random jitter to prevent thundering herd
+ */
+function addJitter(baseMs: number): number {
+    return baseMs + Math.floor(Math.random() * LLM_RATE_LIMIT_CONFIG.JITTER_MAX_MS);
+}
+
+/**
+ * Calculate exponential backoff delay for retries
+ */
+function getLLMBackoffDelay(retryCount: number): number {
+    const delay = LLM_RATE_LIMIT_CONFIG.INITIAL_COOLDOWN_MS *
+        Math.pow(LLM_RATE_LIMIT_CONFIG.BACKOFF_MULTIPLIER, retryCount);
+    return Math.min(addJitter(delay), LLM_RATE_LIMIT_CONFIG.MAX_COOLDOWN_MS);
+}
+
+/**
+ * Wait before making request to a specific provider
+ */
+async function waitForProvider(provider: LLMProvider): Promise<void> {
+    const now = Date.now();
+    const lastRequest = lastProviderRequestTime[provider];
+    const minDelay = LLM_RATE_LIMIT_CONFIG.DELAY_BETWEEN_PROVIDERS_MS;
+
+    if (now - lastRequest < minDelay) {
+        const waitTime = minDelay - (now - lastRequest);
+        console.log(`[LLM/${provider}] Rate limit wait: ${waitTime}ms`);
+        await sleep(waitTime);
+    }
+
+    lastProviderRequestTime[provider] = Date.now();
+}
+
+/**
+ * Parse Retry-After header or extract wait time from error response
+ */
+function parseRetryAfterFromError(responseText: string): number | null {
+    // Try to find "retry after X seconds" or similar patterns
+    const patterns = [
+        /retry after (\d+) seconds?/i,
+        /wait (\d+) seconds?/i,
+        /available in (\d+) seconds?/i,
+        /cooldown.*?(\d+)/i,
+    ];
+
+    for (const pattern of patterns) {
+        const match = responseText.match(pattern);
+        if (match) {
+            return parseInt(match[1], 10) * 1000;
+        }
+    }
+
+    return null;
+}
 
 interface LLMCallOptions {
     provider: LLMProvider;
@@ -50,12 +133,13 @@ async function callAzureOpenAI(
     const apiKey = Deno.env.get("AZURE_OPENAI_API_KEY");
     const endpoint = Deno.env.get("AZURE_OPENAI_ENDPOINT");
     const deploymentName = Deno.env.get("AZURE_OPENAI_DEPLOYMENT") || "gpt-4o-mini";
-    const maxRetries = 3;
-    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey || !endpoint) {
         throw new Error("Azure OpenAI credentials not configured");
     }
+
+    // Wait for rate limit before request
+    await waitForProvider("azure");
 
     const url = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-15-preview`;
 
@@ -79,10 +163,16 @@ async function callAzureOpenAI(
     if (!response.ok) {
         const errorText = await response.text();
 
-        // Retry on rate limit (429) error
-        if (response.status === 429 && retryCount < maxRetries) {
-            console.log(`Azure rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
-            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+        // Retry on rate limit (429) error with exponential backoff
+        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+            const serverWaitTime = parseRetryAfterFromError(errorText);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+
+            console.warn(
+                `[Azure] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `after ${Math.round(cooldownMs / 1000)}s cooldown...`
+            );
+            await sleep(cooldownMs);
             return callAzureOpenAI(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
         }
 
@@ -107,12 +197,13 @@ async function callGemini(
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     const modelName = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash-lite";
-    const maxRetries = 3;
-    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey) {
         throw new Error("Gemini API key not configured");
     }
+
+    // Wait for rate limit before request
+    await waitForProvider("gemini");
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
@@ -142,10 +233,16 @@ async function callGemini(
     if (!response.ok) {
         const errorText = await response.text();
 
-        // Retry on rate limit (429) error
-        if (response.status === 429 && retryCount < maxRetries) {
-            console.log(`Gemini rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
-            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+        // Retry on rate limit (429) error with exponential backoff
+        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+            const serverWaitTime = parseRetryAfterFromError(errorText);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+
+            console.warn(
+                `[Gemini] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `after ${Math.round(cooldownMs / 1000)}s cooldown...`
+            );
+            await sleep(cooldownMs);
             return callGemini(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
         }
 
@@ -170,12 +267,13 @@ async function callZai(
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("ZAI_API_KEY");
     const modelName = Deno.env.get("ZAI_MODEL") || "glm-4v-flash";
-    const maxRetries = 3;
-    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey) {
         throw new Error("Z.ai API key not configured");
     }
+
+    // Wait for rate limit before request
+    await waitForProvider("zai");
 
     const url = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
@@ -199,10 +297,16 @@ async function callZai(
     if (!response.ok) {
         const errorText = await response.text();
 
-        // Retry on rate limit (429) error
-        if (response.status === 429 && retryCount < maxRetries) {
-            console.log(`Z.ai rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
-            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+        // Retry on rate limit (429) error with exponential backoff
+        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+            const serverWaitTime = parseRetryAfterFromError(errorText);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+
+            console.warn(
+                `[Z.ai] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `after ${Math.round(cooldownMs / 1000)}s cooldown...`
+            );
+            await sleep(cooldownMs);
             return callZai(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
         }
 
@@ -227,12 +331,13 @@ async function callGroq(
 ): Promise<LLMSignalResponse> {
     const apiKey = Deno.env.get("GROQ_API_KEY");
     const modelName = Deno.env.get("GROQ_MODEL") || "llama-3.3-70b-versatile";
-    const maxRetries = 3;
-    const cooldownMs = 5000; // 5 seconds
 
     if (!apiKey) {
         throw new Error("Groq API key not configured");
     }
+
+    // Wait for rate limit before request
+    await waitForProvider("groq");
 
     const url = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -257,10 +362,16 @@ async function callGroq(
     if (!response.ok) {
         const errorText = await response.text();
 
-        // Retry on rate limit (429) error
-        if (response.status === 429 && retryCount < maxRetries) {
-            console.log(`Groq rate limited (429). Retry ${retryCount + 1}/${maxRetries} after ${cooldownMs / 1000}s cooldown...`);
-            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+        // Retry on rate limit (429) error with exponential backoff
+        if (response.status === 429 && retryCount < LLM_RATE_LIMIT_CONFIG.MAX_RETRIES) {
+            const serverWaitTime = parseRetryAfterFromError(errorText);
+            const cooldownMs = serverWaitTime || getLLMBackoffDelay(retryCount);
+
+            console.warn(
+                `[Groq] Rate limited (429). Retry ${retryCount + 1}/${LLM_RATE_LIMIT_CONFIG.MAX_RETRIES} ` +
+                `after ${Math.round(cooldownMs / 1000)}s cooldown...`
+            );
+            await sleep(cooldownMs);
             return callGroq(systemPrompt, userPrompt, temperature, maxTokens, retryCount + 1);
         }
 
@@ -369,26 +480,54 @@ function parseSignalResponse(content: string, provider: string): LLMSignalRespon
 }
 
 /**
- * Call multiple LLM providers in parallel and return all results
+ * Call multiple LLM providers and return all results
+ * Uses sequential execution with delays to prevent rate limiting
  */
 export async function callMultipleLLMs(
     systemPrompt: string,
     userPrompt: string,
-    providers: LLMProvider[] = ALL_PROVIDERS
+    providers: LLMProvider[] = ALL_PROVIDERS,
+    sequential: boolean = true // Default to sequential to prevent rate limits
 ): Promise<LLMSignalResponse[]> {
-    const results = await Promise.allSettled(
-        providers.map((provider) =>
-            callLLM({
-                provider,
-                systemPrompt,
-                userPrompt,
-            })
-        )
-    );
+    if (sequential) {
+        // Sequential execution with delay between providers
+        const results: LLMSignalResponse[] = [];
 
-    return results
-        .filter((r): r is PromiseFulfilledResult<LLMSignalResponse> => r.status === "fulfilled")
-        .map((r) => r.value);
+        for (const provider of providers) {
+            try {
+                console.log(`[LLM] Calling ${provider} (sequential mode)...`);
+                const result = await callLLM({
+                    provider,
+                    systemPrompt,
+                    userPrompt,
+                });
+                results.push(result);
+
+                // Small delay between providers even within sequential mode
+                await sleep(LLM_RATE_LIMIT_CONFIG.DELAY_BETWEEN_PROVIDERS_MS);
+            } catch (error) {
+                console.error(`[LLM] ${provider} failed:`, error);
+                // Continue with other providers
+            }
+        }
+
+        return results;
+    } else {
+        // Parallel execution (use with caution - may hit rate limits)
+        const results = await Promise.allSettled(
+            providers.map((provider) =>
+                callLLM({
+                    provider,
+                    systemPrompt,
+                    userPrompt,
+                })
+            )
+        );
+
+        return results
+            .filter((r): r is PromiseFulfilledResult<LLMSignalResponse> => r.status === "fulfilled")
+            .map((r) => r.value);
+    }
 }
 
 /**

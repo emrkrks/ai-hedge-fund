@@ -1,5 +1,6 @@
 // Supabase Edge Functions - Financial Data API Client
 // Uses FinancialDatasets.ai API (same as original Python project)
+// Includes rate limiting and retry mechanisms to prevent 429 errors
 
 import {
     FinancialMetrics,
@@ -13,6 +14,83 @@ import {
 
 const FINANCIAL_DATASETS_BASE_URL = "https://api.financialdatasets.ai";
 const FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations";
+
+// ============================================================================
+// Rate Limiting Configuration
+// ============================================================================
+const RATE_LIMIT_CONFIG = {
+    MIN_DELAY_MS: 500,           // Minimum delay between requests (500ms)
+    MAX_DELAY_MS: 30000,         // Maximum delay for backoff (30 seconds)
+    MAX_RETRIES: 5,              // Maximum retry attempts for 429 errors
+    INITIAL_BACKOFF_MS: 1000,    // Initial backoff delay (1 second)
+    BACKOFF_MULTIPLIER: 2,       // Exponential backoff multiplier
+    JITTER_MAX_MS: 500,          // Random jitter to prevent thundering herd
+};
+
+// Request queue for sequential API calls
+let lastRequestTime = 0;
+const requestQueue: Promise<unknown>[] = [];
+
+/**
+ * Utility: Sleep for specified milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Utility: Add random jitter to prevent thundering herd
+ */
+function addJitter(baseMs: number): number {
+    return baseMs + Math.floor(Math.random() * RATE_LIMIT_CONFIG.JITTER_MAX_MS);
+}
+
+/**
+ * Utility: Calculate exponential backoff delay
+ */
+function getBackoffDelay(retryCount: number): number {
+    const delay = RATE_LIMIT_CONFIG.INITIAL_BACKOFF_MS *
+        Math.pow(RATE_LIMIT_CONFIG.BACKOFF_MULTIPLIER, retryCount);
+    return Math.min(addJitter(delay), RATE_LIMIT_CONFIG.MAX_DELAY_MS);
+}
+
+/**
+ * Utility: Wait for rate limit before making request
+ */
+async function waitForRateLimit(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+
+    if (timeSinceLastRequest < RATE_LIMIT_CONFIG.MIN_DELAY_MS) {
+        const waitTime = RATE_LIMIT_CONFIG.MIN_DELAY_MS - timeSinceLastRequest;
+        console.log(`[RateLimit] Waiting ${waitTime}ms before next request`);
+        await sleep(waitTime);
+    }
+
+    lastRequestTime = Date.now();
+}
+
+/**
+ * Parse retry-after header or response body for wait time
+ */
+function parseRetryAfter(response: Response, responseText: string): number {
+    // Check Retry-After header first
+    const retryAfter = response.headers.get("Retry-After");
+    if (retryAfter) {
+        const seconds = parseInt(retryAfter, 10);
+        if (!isNaN(seconds)) {
+            return seconds * 1000;
+        }
+    }
+
+    // Try to parse from response body (e.g., "Expected available in 15 seconds")
+    const match = responseText.match(/available in (\d+) seconds?/i);
+    if (match) {
+        return parseInt(match[1], 10) * 1000;
+    }
+
+    return 0; // Use exponential backoff if no info available
+}
 
 /**
  * Get FinancialDatasets.ai API key from Supabase secrets
@@ -33,7 +111,7 @@ function getFredApiKey(): string | null {
 }
 
 /**
- * Make API request to FinancialDatasets.ai
+ * Make API request to FinancialDatasets.ai with retry and rate limiting
  */
 async function makeFinancialDatasetsRequest(
     endpoint: string,
@@ -57,14 +135,59 @@ async function makeFinancialDatasetsRequest(
         options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, options);
+    // Retry loop with exponential backoff
+    for (let attempt = 0; attempt <= RATE_LIMIT_CONFIG.MAX_RETRIES; attempt++) {
+        // Wait for rate limit before each request
+        await waitForRateLimit();
 
-    if (!response.ok) {
-        console.error(`FinancialDatasets API error: ${response.status} - ${await response.text()}`);
-        return null;
+        try {
+            const response = await fetch(url, options);
+
+            // Handle rate limit (429) specifically
+            if (response.status === 429) {
+                const responseText = await response.text();
+                const retryAfterMs = parseRetryAfter(response, responseText);
+                const backoffDelay = retryAfterMs > 0
+                    ? retryAfterMs + addJitter(0)
+                    : getBackoffDelay(attempt);
+
+                console.warn(
+                    `[RateLimit] 429 received for ${endpoint}. ` +
+                    `Attempt ${attempt + 1}/${RATE_LIMIT_CONFIG.MAX_RETRIES + 1}. ` +
+                    `Waiting ${backoffDelay}ms before retry...`
+                );
+
+                if (attempt < RATE_LIMIT_CONFIG.MAX_RETRIES) {
+                    await sleep(backoffDelay);
+                    continue; // Retry
+                } else {
+                    console.error(`[RateLimit] Max retries exceeded for ${endpoint}`);
+                    return null;
+                }
+            }
+
+            // Handle other errors
+            if (!response.ok) {
+                console.error(`FinancialDatasets API error: ${response.status} - ${await response.text()}`);
+                return null;
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error(`[Network] Error fetching ${endpoint}:`, error);
+
+            if (attempt < RATE_LIMIT_CONFIG.MAX_RETRIES) {
+                const backoffDelay = getBackoffDelay(attempt);
+                console.warn(`[Network] Retrying in ${backoffDelay}ms...`);
+                await sleep(backoffDelay);
+                continue;
+            }
+
+            return null;
+        }
     }
 
-    return await response.json();
+    return null;
 }
 
 /**
